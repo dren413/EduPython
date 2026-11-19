@@ -3,12 +3,20 @@ fn main() {
     if let Ok(zip) = std::env::var("EDUPYTHON_PYTHON_ZIP") {
         println!("cargo:rerun-if-changed={zip}");
     }
-    #[cfg(windows)]
-    {
+    // Check the *target*, not the machine we build on, so a Windows exe built
+    // on a Mac (x86_64-pc-windows-gnu) also gets its icon.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
         res.set_icon("assets/icon.ico");
         res.set("ProductName", "EduPython");
         res.set("FileDescription", "EduPython");
-        let _ = res.compile();
+        // Cross-compiling from macOS/Linux: use the MinGW tools (brew install mingw-w64).
+        if !cfg!(windows) {
+            res.set_windres_path("x86_64-w64-mingw32-windres");
+            res.set_ar_path("x86_64-w64-mingw32-ar");
+        }
+        if let Err(e) = res.compile() {
+            println!("cargo:warning=Windows icon not embedded: {e}");
+        }
     }
 }
