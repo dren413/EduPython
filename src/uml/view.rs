@@ -127,7 +127,7 @@ impl UmlView {
         ui.horizontal(|ui| {
             ui.strong("UML");
             ui.separator();
-            if ui.button("➕ Class").on_hover_text("Add a new class").clicked() {
+            if ui.add(crate::icons::IconButton::new(crate::icons::Icon::Plus).text("Class")).on_hover_text("Add a new class").clicked() {
                 action = Some(UmlAction::AddClass);
             }
             if ui.button("Fit").on_hover_text("Show the whole diagram").clicked() {
@@ -357,7 +357,7 @@ impl UmlView {
             painter.text(
                 canvas.center(),
                 Align2::CENTER_CENTER,
-                "No classes yet.\nRight-click here (or press ➕ Class) to add one,\nor write  class Name:  in your code.",
+                "No classes yet.\nRight-click here (or press + Class) to add one,\nor write  class Name:  in your code.",
                 FontId::proportional(14.0),
                 col.muted,
             );
@@ -410,7 +410,7 @@ impl UmlView {
                     }
                 }
                 None => {
-                    if ui.button("➕ New class…").clicked() {
+                    if ui.button("New class…").clicked() {
                         action = Some(UmlAction::AddClass);
                     }
                     if ui.button("Arrange automatically").clicked() {

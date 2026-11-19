@@ -4,6 +4,7 @@ mod app;
 mod console;
 mod editor;
 mod highlight;
+mod icons;
 mod project;
 mod python;
 mod runtime;
