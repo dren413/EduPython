@@ -9,6 +9,8 @@
 </p>
 
 <p align="center">
+  <a href="https://www.edupython.lu">www.edupython.lu</a>
+  ·
   <a href="https://github.com/dren413/EduPython/releases">Downloads</a>
   ·
   <a href="https://github.com/dren413/EduPython/releases/latest">Latest Release</a>
@@ -49,7 +51,8 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
 - **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
   Click the Python version in the toolbar to see the interpreter and to install pygame into it.
-- **Booklet**: the exam reference booklet (PDF) in a side panel, with page jump, zoom
+- **Booklet**: the exam reference booklet (PDF) in a side panel, with clickable table of
+  contents and links, page jump, zoom
   (buttons, Ctrl + mouse wheel or trackpad pinch) and **search** (Ctrl+F; finds French words
   without typing accents, and code such as `my_list[:]`). Text can be **selected and copied**
   (drag, double-click a word, Ctrl+C or right-click > Copy) and pastes into code with its
