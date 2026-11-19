@@ -44,11 +44,44 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   the import added to `main.py`), **attributes** (optionally as constructor parameters),
   **methods** with typed parameters and return types, or a **constructor**, or to **delete a method**.
   You can type types in UML style (`(int,int)`); the code gets `tuple[int, int]`.
-- **Files (right)**: add, rename and delete files, and choose the main file (▶).
+- **File tabs** above the editor: one tab per file (tabs cannot be closed). **+** adds a file;
+  right-click a tab to rename or delete it, or to make it the main file (green triangle).
 - **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
-  *Run ▸ Install pygame* installs pygame into the interpreter in use.
+  *Run > Install pygame* installs pygame into the interpreter in use.
+- **Booklet**: the exam reference booklet (PDF) in a side panel, with page jump, zoom
+  (buttons, Ctrl + mouse wheel or trackpad pinch) and **search** (Ctrl+F; finds French words
+  without typing accents, and code such as `my_list[:]`).
+  It is installed by the school next to the program (see below), so a new booklet
+  needs no new Pythonizer version.
+- The editor scrolls only vertically; long lines wrap.
 - Light/dark mode and interface zoom (Ctrl +/−).
+
+## School setup (IT): booklet and fixed Python
+
+Put these files **in the same folder as `Pythonizer.exe`** (e.g. `C:\Program Files\Pythonizer\`):
+
+```
+Pythonizer.exe
+pythonizer.ini          <- copy of packaging/pythonizer.example.ini
+Python reference.pdf    <- the booklet named in the ini
+```
+
+`pythonizer.ini` sets:
+
+- `[python] path = ...` (repeatable): the interpreters to use, **always tried first**.
+  If none work and `fallback_search = yes`, Pythonizer searches the computer as usual.
+- `allow_change = no`: pupils cannot pick another interpreter (the default with an ini).
+- `allow_install = no`: hides *Install pygame* (the default with an ini).
+- `packages = pygame, numpy`: checked at start; missing ones turn the toolbar dot orange.
+- `packages_path = ...`: extra package folders (added to `PYTHONPATH`).
+- `[booklet] file = ...` and `title = ...`: the booklet PDF (relative to the ini).
+
+Without an ini, a file called `booklet.pdf` next to the program is shown as the booklet.
+Other places that are searched, in order: the file in the environment variable
+`PYTHONIZER_CONFIG`, the folder next to `Pythonizer.app` (macOS),
+`%ProgramData%\Pythonizer` (Windows) and `/Library/Application Support/Pythonizer` (macOS).
+To update the booklet for a new school year, replace the PDF. Nothing else changes.
 
 ## Project format
 

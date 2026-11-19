@@ -12,7 +12,9 @@ pub struct Settings {
     pub ui_zoom: f32,
     pub python_command: Option<String>,
     pub show_uml: bool,
-    pub show_files: bool,
+    pub show_booklet: bool,
+    /// Last page viewed in the booklet (0-based).
+    pub booklet_page: usize,
     pub recent_projects: Vec<String>,
     pub reopen_last_project: bool,
 }
@@ -25,7 +27,8 @@ impl Default for Settings {
             ui_zoom: 1.0,
             python_command: None,
             show_uml: true,
-            show_files: true,
+            show_booklet: false,
+            booklet_page: 0,
             recent_projects: Vec::new(),
             reopen_last_project: true,
         }

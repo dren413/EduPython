@@ -227,29 +227,19 @@ pub fn show(ui: &mut Ui, id: Id, text: &mut String, opts: EditorOptions) -> Edit
 
     let mut cursor_line = None;
     Frame::NONE.fill(opts.bg).show(ui, |ui| {
-        ScrollArea::both().id_salt(id.with("scroll")).auto_shrink(false).show(ui, |ui| {
+        // Vertical scrolling only; long lines wrap instead of scrolling sideways.
+        ScrollArea::vertical().id_salt(id.with("scroll")).auto_shrink(false).show(ui, |ui| {
             ui.horizontal_top(|ui| {
                 ui.spacing_mut().item_spacing.x = 0.0;
                 let height = (n_lines.max(visible_rows)) as f32 * row_h + 2.0 * margin_y;
                 let (gutter, _) = ui.allocate_exact_size(vec2(gutter_w, height), Sense::hover());
-                let text_top = gutter.top() + margin_y;
-                let full_width = Rect::from_min_max(
-                    pos2(gutter.left(), 0.0),
-                    pos2(ui.clip_rect().right().max(gutter.right() + 4000.0), 0.0),
-                );
-
-                if let Some(l) = opts.error_line {
-                    let y = text_top + (l.saturating_sub(1)) as f32 * row_h;
-                    ui.painter().rect_filled(
-                        Rect::from_x_y_ranges(full_width.x_range(), y..=y + row_h),
-                        0.0,
-                        error_bg,
-                    );
-                }
+                // Reserved now, filled after layout, so it is drawn *behind* the text.
+                let error_bg_idx = ui.painter().add(egui::Shape::Noop);
 
                 let font2 = font.clone();
-                let mut layouter = move |ui: &Ui, buf: &dyn TextBuffer, _wrap: f32| {
-                    let job = highlight(buf.as_str(), font2.clone(), dark);
+                let mut layouter = move |ui: &Ui, buf: &dyn TextBuffer, wrap_width: f32| {
+                    let mut job = highlight(buf.as_str(), font2.clone(), dark);
+                    job.wrap.max_width = wrap_width;
                     ui.fonts_mut(|f| f.layout_job(job))
                 };
                 let output = TextEdit::multiline(text)
@@ -258,7 +248,7 @@ pub fn show(ui: &mut Ui, id: Id, text: &mut String, opts: EditorOptions) -> Edit
                     .code_editor()
                     .frame(Frame::NONE)
                     .margin(Margin::symmetric(8, margin_y as i8))
-                    .desired_width(ui.available_width().max(200.0))
+                    .desired_width(ui.available_width().max(100.0))
                     .desired_rows(n_lines.max(visible_rows))
                     .lock_focus(true)
                     .layouter(&mut layouter)
@@ -272,31 +262,54 @@ pub fn show(ui: &mut Ui, id: Id, text: &mut String, opts: EditorOptions) -> Edit
                     .map(|r| line_of_char(text, r.primary.index.0));
                 cursor_line = active_line;
 
-                // Line numbers for the visible rows only.
+                // Screen y-range of every logical line (a wrapped line spans several rows).
+                let origin = output.galley_pos;
+                let mut lines: Vec<(f32, f32)> = Vec::with_capacity(n_lines);
+                let mut start_new = true;
+                for row in &output.galley.rows {
+                    let (top, bottom) = (origin.y + row.min_y(), origin.y + row.max_y());
+                    if start_new {
+                        lines.push((top, bottom));
+                    } else if let Some(l) = lines.last_mut() {
+                        l.1 = bottom;
+                    }
+                    start_new = row.ends_with_newline;
+                }
+                let line_range = |n: usize| -> (f32, f32) {
+                    lines.get(n.saturating_sub(1)).copied().unwrap_or_else(|| {
+                        let y = gutter.top() + margin_y + n.saturating_sub(1) as f32 * row_h;
+                        (y, y + row_h)
+                    })
+                };
+
+                let full_x = gutter.left()..=ui.max_rect().right();
+                if let Some(l) = opts.error_line {
+                    let (top, bottom) = line_range(l);
+                    let shape = egui::Shape::rect_filled(Rect::from_x_y_ranges(full_x.clone(), top..=bottom), 0.0, error_bg);
+                    ui.painter().set(error_bg_idx, shape);
+                }
+
+                // Line numbers for the visible lines only.
                 let clip = ui.clip_rect();
-                let first = (((clip.top() - text_top) / row_h).floor().max(0.0)) as usize;
-                let last = ((((clip.bottom() - text_top) / row_h).ceil()) as usize + 1).min(n_lines);
                 let painter = ui.painter();
-                for i in first..last {
+                for (i, &(top, bottom)) in lines.iter().enumerate() {
+                    if bottom < clip.top() || top > clip.bottom() {
+                        continue;
+                    }
                     let n = i + 1;
-                    let y = text_top + i as f32 * row_h;
-                    let is_err = opts.error_line == Some(n);
-                    let color = if is_err {
+                    let color = if opts.error_line == Some(n) {
                         Color32::from_rgb(230, 80, 80)
                     } else if active_line == Some(n) {
                         gutter_active
                     } else {
                         gutter_color
                     };
-                    painter.text(pos2(gutter.right() - 8.0, y), Align2::RIGHT_TOP, n.to_string(), font.clone(), color);
+                    painter.text(pos2(gutter.right() - 8.0, top), Align2::RIGHT_TOP, n.to_string(), font.clone(), color);
                 }
 
                 if let Some(line) = opts.goto_line {
-                    let y = text_top + (line.saturating_sub(1)) as f32 * row_h;
-                    ui.scroll_to_rect(
-                        Rect::from_min_size(pos2(gutter.left(), y), vec2(gutter_w, row_h)),
-                        Some(Align::Center),
-                    );
+                    let (top, bottom) = line_range(line);
+                    ui.scroll_to_rect(Rect::from_x_y_ranges(gutter.x_range(), top..=bottom), Some(Align::Center));
                 }
             });
         });

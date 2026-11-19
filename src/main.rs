@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod booklet;
+mod config;
 mod console;
 mod editor;
 mod highlight;
