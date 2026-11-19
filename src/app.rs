@@ -9,6 +9,7 @@ use eframe::egui::{
 
 use crate::console::{Console, ConsoleAction, Kind, parse_traceback_location};
 use crate::editor::{self, EditorOptions};
+use crate::icons::{Icon, IconButton};
 use crate::project::{Project, Template, python_file_name};
 use crate::python::{self, PythonInfo, RunEvent, Runner, Source};
 use crate::settings::Settings;
@@ -255,7 +256,7 @@ impl PythonizerApp {
             Some(info) if info.source == Source::NotFound => {
                 self.error(
                     "No Python 3 interpreter was found. Install Python from python.org, \
-                     or choose one in File ▸ Python Interpreter…",
+                     or choose one in File > Python Interpreter…",
                 );
                 None
             }
@@ -277,7 +278,7 @@ impl PythonizerApp {
         self.console.clear();
         self.stderr_buf.clear();
         self.error_marker = None;
-        self.console.push(Kind::Info, &format!("▶ {script}   ({})\n", info.version));
+        self.console.push(Kind::Info, &format!("Running {script}   ({})\n", info.version));
         match Runner::start(&info.exec, &dir, &[&script], ctx) {
             Ok(r) => {
                 self.runner = Some(r);
@@ -309,7 +310,7 @@ impl PythonizerApp {
             if r.is_running() {
                 r.kill();
                 self.console.end_line();
-                self.console.push(Kind::Info, "■ Stopped\n");
+                self.console.push(Kind::Info, "Stopped\n");
             }
         }
     }
@@ -355,14 +356,14 @@ impl PythonizerApp {
         }
         if let Some((file, line)) = &marker {
             let msg = self.stderr_buf.lines().rev().find(|l| !l.trim().is_empty()).unwrap_or("").to_string();
-            self.console.push(Kind::Hint, &format!("➜ Problem in {file}, line {line}: {msg}\n"));
+            self.console.push(Kind::Hint, &format!("Problem in {file}, line {line}: {msg}\n"));
             if let Some(idx) = self.project.as_ref().unwrap().index_of(file) {
                 self.active = idx;
                 self.goto = Some((idx, *line));
             }
         }
         if self.stderr_buf.contains("No module named 'pygame'") {
-            self.console.push(Kind::Hint, "Tip: pygame is not installed. Use Run ▸ Install pygame.\n");
+            self.console.push(Kind::Hint, "Tip: pygame is not installed. Use Run > Install pygame.\n");
         }
         self.error_marker = marker;
         match code {
@@ -686,29 +687,30 @@ impl PythonizerApp {
                 ui.label(RichText::new(format!("— {}", p.name())).weak());
             }
             ui.separator();
-            if ui.button("🗋 New").on_hover_text("New project").clicked() {
+            if ui.add(IconButton::new(Icon::New).text("New")).on_hover_text("New project").clicked() {
                 self.request(Pending::NewProject);
             }
-            if ui.button("🗁 Open").on_hover_text("Open a project folder").clicked() {
+            if ui.add(IconButton::new(Icon::Open).text("Open")).on_hover_text("Open a project folder").clicked() {
                 self.request(Pending::OpenProject(None));
             }
             let dirty = self.is_dirty();
-            if ui.add_enabled(self.project.is_some(), egui::Button::new(if dirty { "💾 Save •" } else { "💾 Save" })).clicked() {
+            if ui.add_enabled(self.project.is_some(), IconButton::new(Icon::Save).text(if dirty { "Save •" } else { "Save" })).clicked() {
                 self.save();
             }
             ui.separator();
             let running = self.is_running();
             let has = self.project.is_some();
             let main = self.project.as_ref().map(|p| p.main_file.clone()).unwrap_or_default();
-            let run_btn = egui::Button::new(RichText::new("▶ Run").color(Color32::WHITE).strong())
-                .fill(Color32::from_rgb(46, 160, 67));
+            let run_btn = IconButton::new(Icon::Run).text(RichText::new("Run").strong()).color(Color32::WHITE).fill(Color32::from_rgb(46, 160, 67));
             if ui.add_enabled(has && !running, run_btn).on_hover_text(format!("Run {main} (F5)")).clicked() {
                 self.run(&ctx, false);
             }
-            if ui.add_enabled(has && !running, egui::Button::new("▶ Run this file")).on_hover_text("Run the file that is open in the editor").clicked() {
+            if ui.add_enabled(has && !running, IconButton::new(Icon::RunFile).text("Run this file")).on_hover_text("Run the file that is open in the editor").clicked() {
                 self.run(&ctx, true);
             }
-            let stop_btn = egui::Button::new(RichText::new("⏹ Stop").color(if running { Color32::WHITE } else { ui.visuals().weak_text_color() }))
+            let stop_btn = IconButton::new(Icon::Stop)
+                .text("Stop")
+                .color(if running { Color32::WHITE } else { ui.visuals().weak_text_color() })
                 .fill(if running { Color32::from_rgb(200, 60, 60) } else { ui.visuals().widgets.inactive.weak_bg_fill });
             if ui.add_enabled(running, stop_btn).on_hover_text("Stop the program (Shift+F5)").clicked() {
                 self.stop();
@@ -719,7 +721,7 @@ impl PythonizerApp {
 
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
                 let dark = self.settings.dark;
-                if ui.button(if dark { "☀" } else { "🌙" }).on_hover_text("Light / dark mode").clicked() {
+                if ui.add(IconButton::new(if dark { Icon::Sun } else { Icon::Moon })).on_hover_text("Light / dark mode").clicked() {
                     self.set_dark(&ctx, !dark);
                 }
                 if ui.selectable_label(self.settings.show_files, "Files").on_hover_text("Show the file list (right)").clicked() {
@@ -745,11 +747,11 @@ impl PythonizerApp {
                     }
                     Some(info) => {
                         let ok = info.source != Source::NotFound;
-                        let dot = RichText::new("●").color(if ok { Color32::from_rgb(70, 180, 90) } else { Color32::from_rgb(220, 70, 70) });
+                        let dot = if ok { Color32::from_rgb(70, 180, 90) } else { Color32::from_rgb(220, 70, 70) };
                         let text = if ok { info.version.clone() } else { "No Python found".into() };
-                        let pg = if info.has_pygame { "pygame ✔" } else { "pygame not installed" };
+                        let pg = if info.has_pygame { "pygame installed" } else { "pygame not installed" };
                         let resp = ui
-                            .add(egui::Button::new((dot, RichText::new(text))).frame(false))
+                            .add(IconButton::new(Icon::Dot).text(text).icon_color(dot).frame(false))
                             .on_hover_text(format!("{}\n({})\n{}\nClick to change", info.exec.display(), info.source.label(), pg));
                         if resp.clicked() {
                             let input = self.settings.python_command.clone().unwrap_or_else(|| info.exec.command.clone());
@@ -767,7 +769,7 @@ impl PythonizerApp {
         ui.horizontal(|ui| {
             ui.strong("Files");
             ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.small_button("➕").on_hover_text("New file (Ctrl+T)").clicked() {
+                if ui.add(IconButton::new(Icon::Plus).small()).on_hover_text("New file (Ctrl+T)").clicked() {
                     self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
                 }
             });
@@ -778,7 +780,7 @@ impl PythonizerApp {
             for (i, f) in p.files.iter().enumerate() {
                 let is_main = f.name == p.main_file;
                 let mut label = String::new();
-                label.push_str(if is_main { "▶ " } else { "   " });
+                label.push_str("     ");
                 label.push_str(&f.name);
                 if f.is_dirty() {
                     label.push_str("  •");
@@ -788,7 +790,12 @@ impl PythonizerApp {
                     text = text.strong();
                 }
                 let resp = ui.selectable_label(self.active == i, text);
-                let resp = if is_main { resp.on_hover_text("Main file – started with ▶ Run") } else { resp };
+                if is_main {
+                    let h = 9.0;
+                    let r = egui::Rect::from_min_size(egui::pos2(resp.rect.left() + 5.0, resp.rect.center().y - h / 2.0), egui::Vec2::splat(h));
+                    crate::icons::paint(ui.painter(), r, Icon::Run, Color32::from_rgb(46, 160, 67));
+                }
+                let resp = if is_main { resp.on_hover_text("Main file – started with Run (F5)") } else { resp };
                 if resp.clicked() {
                     self.active = i;
                 }
@@ -868,11 +875,11 @@ impl PythonizerApp {
             ui.label(RichText::new("Pythonizer").size(34.0).strong());
             ui.label(RichText::new("Write Python, run it, and see your classes as UML.").size(15.0).weak());
             ui.add_space(24.0);
-            if ui.add(egui::Button::new(RichText::new("🗋  New Project…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
+            if ui.add(IconButton::new(Icon::New).text(RichText::new("New Project…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
                 self.request(Pending::NewProject);
             }
             ui.add_space(6.0);
-            if ui.add(egui::Button::new(RichText::new("🗁  Open Project Folder…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
+            if ui.add(IconButton::new(Icon::Open).text(RichText::new("Open Project Folder…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
                 self.request(Pending::OpenProject(None));
             }
             if !self.settings.recent_projects.is_empty() {
@@ -1003,7 +1010,7 @@ impl PythonizerApp {
                             ui.label(format!("{} ({})", info.version, info.source.label()));
                             ui.end_row();
                             ui.label("pygame:");
-                            ui.label(if info.has_pygame { "installed" } else { "not installed (Run ▸ Install pygame)" });
+                            ui.label(if info.has_pygame { "installed" } else { "not installed (Run > Install pygame)" });
                             ui.end_row();
                         });
                         ui.separator();
