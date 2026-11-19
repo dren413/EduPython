@@ -1121,7 +1121,7 @@ impl Booklet {
             }
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut self.page_input)
-                    .desired_width(28.0)
+                    .desired_width(36.0)
                     .align(egui::Align2::CENTER_CENTER)
                     .hint_text((self.page + 1).to_string()),
             );
