@@ -13,6 +13,8 @@ pub struct Settings {
     pub python_command: Option<String>,
     pub show_uml: bool,
     pub show_booklet: bool,
+    /// Dotted grid behind the UML diagram.
+    pub uml_grid: bool,
     /// Last page viewed in the booklet (0-based).
     pub booklet_page: usize,
     pub recent_projects: Vec<String>,
@@ -27,6 +29,7 @@ impl Default for Settings {
             python_command: None,
             show_uml: true,
             show_booklet: false,
+            uml_grid: true,
             booklet_page: 0,
             recent_projects: Vec::new(),
         }
