@@ -1,9 +1,9 @@
-name: Build Pythonizer
+name: Build EduPython
 
 # Builds ready-to-run downloads with Python + pygame built in:
-#   Pythonizer-windows-x64.exe   (portable, no installer)
-#   Pythonizer-macos-arm64.dmg   (Apple Silicon)
-#   Pythonizer-macos-x64.dmg     (Intel Macs)
+#   EduPython-windows-x64.exe   (portable, no installer)
+#   EduPython-macos-arm64.dmg   (Apple Silicon)
+#   EduPython-macos-x64.dmg     (Intel Macs)
 # Push a tag like `v2.0.0` to publish them as a GitHub release.
 
 on:
@@ -24,13 +24,13 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact: Pythonizer-windows-x64.exe
+            artifact: EduPython-windows-x64.exe
           - os: macos-14
             target: aarch64-apple-darwin
-            artifact: Pythonizer-macos-arm64.dmg
+            artifact: EduPython-macos-arm64.dmg
           - os: macos-13
             target: x86_64-apple-darwin
-            artifact: Pythonizer-macos-x64.dmg
+            artifact: EduPython-macos-x64.dmg
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -60,17 +60,17 @@ jobs:
 
       - name: Build
         run: |
-          export PYTHONIZER_PYTHON_ZIP="$PWD/python-runtime.zip"
+          export EDUPYTHON_PYTHON_ZIP="$PWD/python-runtime.zip"
           cargo build --release --target ${{ matrix.target }} --features bundled-python
           mkdir -p dist
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        run: cp target/${{ matrix.target }}/release/pythonizer.exe dist/${{ matrix.artifact }}
+        run: cp target/${{ matrix.target }}/release/edupython.exe dist/${{ matrix.artifact }}
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        run: packaging/macos/make_dmg.sh target/${{ matrix.target }}/release/pythonizer dist/${{ matrix.artifact }}
+        run: packaging/macos/make_dmg.sh target/${{ matrix.target }}/release/edupython dist/${{ matrix.artifact }}
 
       - uses: actions/upload-artifact@v4
         with:
@@ -82,4 +82,4 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: dist/${{ matrix.artifact }}
-          name: Pythonizer ${{ github.ref_name }}
+          name: EduPython ${{ github.ref_name }}

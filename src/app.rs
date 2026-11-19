@@ -1,4 +1,4 @@
-//! The Pythonizer application window.
+//! The EduPython application window.
 
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
@@ -53,7 +53,7 @@ enum RunKind {
     PipInstall,
 }
 
-pub struct PythonizerApp {
+pub struct EduPythonApp {
     settings: Settings,
     project: Option<Project>,
     active: usize,
@@ -77,7 +77,7 @@ pub struct PythonizerApp {
     dialog_result: Option<bool>,
     /// App icon shown on the welcome screen.
     logo: Option<egui::TextureHandle>,
-    /// pythonizer.ini installed by the school (or defaults).
+    /// edupython.ini installed by the school (or defaults).
     school: SchoolConfig,
     booklet: Option<Booklet>,
 }
@@ -86,7 +86,7 @@ fn shortcut(m: Modifiers, k: Key) -> KeyboardShortcut {
     KeyboardShortcut::new(m, k)
 }
 
-impl PythonizerApp {
+impl EduPythonApp {
     pub fn new(cc: &eframe::CreationContext<'_>, open_arg: Option<PathBuf>) -> Self {
         let settings = Settings::load();
         let ctx = &cc.egui_ctx;
@@ -104,7 +104,7 @@ impl PythonizerApp {
         let logo = eframe::icon_data::from_png_bytes(ICON_PNG).ok().map(|icon| {
             let image = egui::ColorImage::from_rgba_unmultiplied([icon.width as usize, icon.height as usize], &icon.rgba);
             let options = egui::TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..egui::TextureOptions::LINEAR };
-            ctx.load_texture("pythonizer_logo", image, options)
+            ctx.load_texture("edupython_logo", image, options)
         });
 
         let school = SchoolConfig::load();
@@ -189,7 +189,7 @@ impl PythonizerApp {
         if project.legacy {
             self.console.push(
                 Kind::Hint,
-                "This project was made with the old tkinter version of Pythonizer.\n\
+                "This project was made with the old tkinter version (EduPython 1).\n\
                  gui.py is now shown as a normal file – the visual GUI designer no longer exists.\n",
             );
         }
@@ -722,7 +722,7 @@ impl PythonizerApp {
                 if ui.button("Keyboard Shortcuts").clicked() {
                     self.dialog = Some(Dialog::Shortcuts);
                 }
-                if ui.button("About Pythonizer").clicked() {
+                if ui.button("About EduPython").clicked() {
                     self.dialog = Some(Dialog::About);
                 }
             });
@@ -732,7 +732,10 @@ impl PythonizerApp {
     fn toolbar(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         ui.horizontal(|ui| {
-            ui.label(RichText::new("Pythonizer").strong().size(16.0));
+            if let Some(logo) = &self.logo {
+                ui.add(egui::Image::new((logo.id(), egui::vec2(22.0, 22.0))));
+            }
+            ui.label(RichText::new("EduPython").strong().size(16.0));
             if let Some(p) = &self.project {
                 ui.label(RichText::new(format!("— {}", p.name())).weak());
             }
@@ -777,7 +780,7 @@ impl PythonizerApp {
                 let booklet_hint = match &self.booklet {
                     Some(b) => format!("Show the booklet ({})", b.title),
                     None => format!(
-                        "No booklet installed.\nIT can put {} (or a pythonizer.ini) next to the Pythonizer program.",
+                        "No booklet installed.\nIT can put {} (or a edupython.ini) next to the EduPython program.",
                         crate::config::DEFAULT_BOOKLET
                     ),
                 };
@@ -956,7 +959,7 @@ impl PythonizerApp {
                 ui.add(egui::Image::new((logo.id(), egui::vec2(128.0, 128.0))));
                 ui.add_space(8.0);
             }
-            ui.label(RichText::new("Pythonizer").size(34.0).strong());
+            ui.label(RichText::new("EduPython").size(34.0).strong());
             ui.label(RichText::new("Write Python, run it, and see your classes as UML.").size(15.0).weak());
             ui.add_space(24.0);
             if ui.add(IconButton::new(Icon::New).text(RichText::new("New Project…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
@@ -987,7 +990,7 @@ impl PythonizerApp {
         let enter = ctx.input(|i| i.key_pressed(Key::Enter));
         let class_names: Vec<String> = self.classes.iter().map(|c| c.name.clone()).collect();
 
-        let modal = egui::Modal::new(Id::unique("pythonizer_dialog")).show(ctx, |ui| {
+        let modal = egui::Modal::new(Id::unique("edupython_dialog")).show(ctx, |ui| {
             ui.set_min_width(380.0);
             match &mut dialog {
                 Dialog::NewProject { name, location, template, error } => {
@@ -1166,7 +1169,7 @@ impl PythonizerApp {
                 }
                 Dialog::About => {
                     ui.vertical_centered(|ui| {
-                        ui.heading("Pythonizer");
+                        ui.heading("EduPython");
                         ui.label(format!("Version {VERSION} (native)"));
                         ui.add_space(6.0);
                         ui.label("Dren Gashi");
@@ -1435,7 +1438,7 @@ fn insert_import(src: &str, import: &str) -> String {
     s
 }
 
-impl eframe::App for PythonizerApp {
+impl eframe::App for EduPythonApp {
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
@@ -1482,8 +1485,8 @@ impl eframe::App for PythonizerApp {
 
         // window title
         let title = match &self.project {
-            Some(p) => format!("{}{} — Pythonizer", p.name(), if p.is_dirty() { " •" } else { "" }),
-            None => "Pythonizer".into(),
+            Some(p) => format!("{}{} — EduPython", p.name(), if p.is_dirty() { " •" } else { "" }),
+            None => "EduPython".into(),
         };
         if title != self.window_title {
             ctx.send_viewport_cmd(ViewportCommand::Title(title.clone()));

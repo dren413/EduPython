@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Download a standalone CPython, install pygame into it and zip it.
 
-The zip is embedded into Pythonizer when building with
-`--features bundled-python` and `PYTHONIZER_PYTHON_ZIP=<path to zip>`.
+The zip is embedded into EduPython when building with
+`--features bundled-python` and `EDUPYTHON_PYTHON_ZIP=<path to zip>`.
 
 Usage:
     python3 packaging/prepare_python.py <target-triple> <output.zip> [python-minor]
@@ -31,7 +31,7 @@ REMOVE = ["test", "idlelib", "lib2to3", "ensurepip", "turtledemo", "pydoc_data"]
 
 
 def request(url):
-    req = urllib.request.Request(url, headers={"User-Agent": "pythonizer-build"})
+    req = urllib.request.Request(url, headers={"User-Agent": "edupython-build"})
     token = os.environ.get("GITHUB_TOKEN")
     if token and "api.github.com" in url:
         req.add_header("Authorization", f"Bearer {token}")
@@ -61,7 +61,7 @@ def main():
     name, url = find_asset(triple, minor)
     print(f"Downloading {name}")
 
-    work = tempfile.mkdtemp(prefix="pythonizer-py-")
+    work = tempfile.mkdtemp(prefix="edupython-py-")
     archive = os.path.join(work, name)
     with request(url) as r, open(archive, "wb") as f:
         shutil.copyfileobj(r, f)

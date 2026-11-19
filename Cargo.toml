@@ -1,5 +1,5 @@
 [package]
-name = "pythonizer"
+name = "edupython"
 version = "2.0.0"
 edition = "2024"
 description = "A native Python editor for school: code, run, and see your classes as UML"
@@ -18,7 +18,7 @@ serde_json = "1.0.154"
 zip = { version = "9", default-features = false, features = ["deflate"], optional = true }
 
 [features]
-# Embed a zipped Python runtime (path in env var PYTHONIZER_PYTHON_ZIP at build time).
+# Embed a zipped Python runtime (path in env var EDUPYTHON_PYTHON_ZIP at build time).
 bundled-python = ["dep:zip"]
 
 [target.'cfg(windows)'.build-dependencies]

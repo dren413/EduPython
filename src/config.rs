@@ -1,20 +1,22 @@
-//! School configuration: an optional `pythonizer.ini` installed by IT.
+//! School configuration: an optional `edupython.ini` installed by IT.
 //!
-//! Pythonizer looks for it (first match wins) in:
-//! 1. the file named by the environment variable `PYTHONIZER_CONFIG`
-//! 2. the folder of the program (`Pythonizer.exe`)
-//! 3. macOS: the folder that contains `Pythonizer.app`, then `Contents/Resources`
-//! 4. a system folder: `%ProgramData%\Pythonizer` (Windows) or
-//!    `/Library/Application Support/Pythonizer` (macOS)
+//! EduPython looks for it (first match wins) in:
+//! 1. the file named by the environment variable `EDUPYTHON_CONFIG`
+//! 2. the folder of the program (`EduPython.exe`)
+//! 3. macOS: the folder that contains `EduPython.app`, then `Contents/Resources`
+//! 4. a system folder: `%ProgramData%\EduPython` (Windows) or
+//!    `/Library/Application Support/EduPython` (macOS)
 //!
 //! Relative paths inside the ini are relative to the ini's own folder, and
-//! `%VAR%` / `$VAR` / `~` are expanded. See `packaging/pythonizer.example.ini`.
+//! `%VAR%` / `$VAR` / `~` are expanded. See `packaging/edupython.example.ini`.
 //!
 //! Without an ini, a `booklet.pdf` in one of these folders is still shown.
 
 use std::path::{Path, PathBuf};
 
-pub const INI_NAME: &str = "pythonizer.ini";
+pub const INI_NAME: &str = "edupython.ini";
+/// The ini name from when the app was called Pythonizer; still accepted.
+const LEGACY_INI_NAME: &str = "pythonizer.ini";
 pub const DEFAULT_BOOKLET: &str = "booklet.pdf";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -59,8 +61,10 @@ impl SchoolConfig {
     /// Find and load the configuration for this computer.
     pub fn load() -> Self {
         let dirs = search_dirs();
-        let env_ini = std::env::var_os("PYTHONIZER_CONFIG").map(PathBuf::from).filter(|p| p.is_file());
-        let ini = env_ini.or_else(|| dirs.iter().map(|d| d.join(INI_NAME)).find(|p| p.is_file()));
+        let env_ini = std::env::var_os("EDUPYTHON_CONFIG").map(PathBuf::from).filter(|p| p.is_file());
+        let ini = env_ini.or_else(|| {
+            dirs.iter().flat_map(|d| [d.join(INI_NAME), d.join(LEGACY_INI_NAME)]).find(|p| p.is_file())
+        });
         let mut cfg = match &ini {
             Some(path) => match std::fs::read_to_string(path) {
                 Ok(text) => Self::parse(&text, path),
@@ -217,7 +221,7 @@ fn resolve_command(value: &str, base: &Path) -> String {
 fn search_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Some(dir) = std::env::current_exe().ok().and_then(|e| e.parent().map(Path::to_path_buf)) {
-        // macOS: …/Pythonizer.app/Contents/MacOS/pythonizer
+        // macOS: …/EduPython.app/Contents/MacOS/edupython
         if cfg!(target_os = "macos") && dir.ends_with("Contents/MacOS") {
             if let Some(app) = dir.parent().and_then(Path::parent) {
                 if let Some(outside) = app.parent() {
@@ -230,12 +234,12 @@ fn search_dirs() -> Vec<PathBuf> {
     }
     if cfg!(windows) {
         if let Some(pd) = std::env::var_os("ProgramData") {
-            v.push(PathBuf::from(pd).join("Pythonizer"));
+            v.push(PathBuf::from(pd).join("EduPython"));
         }
     } else if cfg!(target_os = "macos") {
-        v.push(PathBuf::from("/Library/Application Support/Pythonizer"));
+        v.push(PathBuf::from("/Library/Application Support/EduPython"));
     } else {
-        v.push(PathBuf::from("/etc/pythonizer"));
+        v.push(PathBuf::from("/etc/edupython"));
     }
     v
 }
@@ -246,7 +250,7 @@ mod tests {
 
     #[test]
     fn parse_ini() {
-        let dir = std::env::temp_dir().join(format!("pythonizer-ini-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("edupython-ini-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("ref.pdf"), b"%PDF").unwrap();
         let text = r#"
@@ -283,11 +287,11 @@ title = Python Reference 2.5.4
     #[test]
     fn expands_variables() {
         // SAFETY: tests in this module do not read this variable concurrently.
-        unsafe { std::env::set_var("PYTHONIZER_TEST_DIR", "/x/y") };
-        assert_eq!(expand_vars("%PYTHONIZER_TEST_DIR%\\python.exe"), "/x/y\\python.exe");
-        assert_eq!(expand_vars("$PYTHONIZER_TEST_DIR/bin"), "/x/y/bin");
-        assert_eq!(expand_vars("${PYTHONIZER_TEST_DIR}/bin"), "/x/y/bin");
+        unsafe { std::env::set_var("EDUPYTHON_TEST_DIR", "/x/y") };
+        assert_eq!(expand_vars("%EDUPYTHON_TEST_DIR%\\python.exe"), "/x/y\\python.exe");
+        assert_eq!(expand_vars("$EDUPYTHON_TEST_DIR/bin"), "/x/y/bin");
+        assert_eq!(expand_vars("${EDUPYTHON_TEST_DIR}/bin"), "/x/y/bin");
         assert_eq!(expand_vars("100%"), "100%");
-        assert_eq!(expand_vars("%NOT_SET_PYTHONIZER%"), "%NOT_SET_PYTHONIZER%");
+        assert_eq!(expand_vars("%NOT_SET_EDUPYTHON%"), "%NOT_SET_EDUPYTHON%");
     }
 }

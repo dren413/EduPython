@@ -1,7 +1,7 @@
-# Pythonizer
+# EduPython
 
 <p align="center">
-  <img src="./pythonizer_icon.png" alt="Pythonizer logo" width="190" />
+  <img src="./edupython_icon.png" alt="EduPython logo" width="190" />
 </p>
 
 <p align="center">
@@ -16,7 +16,7 @@
 
 ---
 
-Pythonizer was created from a teacher's perspective to fill a gap in teaching tools.
+EduPython (formerly Pythonizer) was created from a teacher's perspective to fill a gap in teaching tools.
 Version 2 is a native rewrite in Rust. It drops the tkinter GUI designer and adds a live, two-way
 UML class diagram. There is no web view, no Node.js, and nothing to install for pupils.
 
@@ -53,24 +53,24 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   (buttons, Ctrl + mouse wheel or trackpad pinch) and **search** (Ctrl+F; finds French words
   without typing accents, and code such as `my_list[:]`).
   It is installed by the school next to the program (see below), so a new booklet
-  needs no new Pythonizer version.
+  needs no new EduPython version.
 - The editor scrolls only vertically; long lines wrap.
 - Light/dark mode and interface zoom (Ctrl +/−).
 
 ## School setup (IT): booklet and fixed Python
 
-Put these files **in the same folder as `Pythonizer.exe`** (e.g. `C:\Program Files\Pythonizer\`):
+Put these files **in the same folder as `EduPython.exe`** (e.g. `C:\Program Files\EduPython\`):
 
 ```
-Pythonizer.exe
-pythonizer.ini          <- copy of packaging/pythonizer.example.ini
+EduPython.exe
+edupython.ini          <- copy of packaging/edupython.example.ini
 Python reference.pdf    <- the booklet named in the ini
 ```
 
-`pythonizer.ini` sets:
+`edupython.ini` sets:
 
 - `[python] path = ...` (repeatable): the interpreters to use, **always tried first**.
-  If none work and `fallback_search = yes`, Pythonizer searches the computer as usual.
+  If none work and `fallback_search = yes`, EduPython searches the computer as usual.
 - `allow_change = no`: pupils cannot pick another interpreter (the default with an ini).
 - `allow_install = no`: hides *Install pygame* (the default with an ini).
 - `packages = pygame, numpy`: checked at start; missing ones turn the toolbar dot orange.
@@ -79,13 +79,13 @@ Python reference.pdf    <- the booklet named in the ini
 
 Without an ini, a file called `booklet.pdf` next to the program is shown as the booklet.
 Other places that are searched, in order: the file in the environment variable
-`PYTHONIZER_CONFIG`, the folder next to `Pythonizer.app` (macOS),
-`%ProgramData%\Pythonizer` (Windows) and `/Library/Application Support/Pythonizer` (macOS).
+`EDUPYTHON_CONFIG`, the folder next to `EduPython.app` (macOS),
+`%ProgramData%\EduPython` (Windows) and `/Library/Application Support/EduPython` (macOS).
 To update the booklet for a new school year, replace the PDF. Nothing else changes.
 
 ## Project format
 
-A project is just a folder of `.py` files. `pythonizer.json` remembers the main file and
+A project is just a folder of `.py` files. `edupython.json` remembers the main file and
 the UML box positions. Any folder with Python files can be opened. Old tkinter projects
 also open; `gui.py` then appears as a normal file.
 
@@ -99,25 +99,25 @@ cargo test                # parser, code generator, editor, console, runner test
 
 ## Ready-to-run downloads (no installation for pupils)
 
-The `Build Pythonizer` GitHub workflow (`.github/workflows/build.yml`)
+The `Build EduPython` GitHub workflow (`.github/workflows/build.yml`)
 builds:
 
-- `Pythonizer-windows-x64.exe`: a **single portable exe**. Double-click and it runs. No installer
+- `EduPython-windows-x64.exe`: a **single portable exe**. Double-click and it runs. No installer
   and no Visual C++ runtime needed.
-- `Pythonizer-macos-arm64.dmg` / `Pythonizer-macos-x64.dmg`: the app can be started directly
+- `EduPython-macos-arm64.dmg` / `EduPython-macos-x64.dmg`: the app can be started directly
   from the DMG, or dragged to Applications.
 
 Both have **Python 3.12 + pygame built in**. On first start the built-in Python is unpacked
 once (a few seconds) into the user's local app-data folder
-(`%LOCALAPPDATA%\Pythonizer` / `~/Library/Application Support/Pythonizer`).
+(`%LOCALAPPDATA%\EduPython` / `~/Library/Application Support/EduPython`).
 Push a tag like `v2.0.0` to publish a release.
 
 To build one locally:
 
 ```bash
 python3 packaging/prepare_python.py aarch64-apple-darwin python-runtime.zip   # downloads Python, installs pygame
-PYTHONIZER_PYTHON_ZIP="$PWD/python-runtime.zip" cargo build --release --features bundled-python
-packaging/macos/make_dmg.sh target/release/pythonizer Pythonizer.dmg         # macOS only
+EDUPYTHON_PYTHON_ZIP="$PWD/python-runtime.zip" cargo build --release --features bundled-python
+packaging/macos/make_dmg.sh target/release/edupython EduPython.dmg         # macOS only
 ```
 
 Python builds come from [python-build-standalone](https://github.com/astral-sh/python-build-standalone).
@@ -128,5 +128,5 @@ right-click ▸ Open (or allow it in System Settings ▸ Privacy & Security). To
 
 ## Previous version
 
-The earlier Tauri/React version with the visual tkinter designer (v1.x) is kept in
+The earlier Tauri/React version, then called Pythonizer, with the visual tkinter designer (v1.x) is kept in
 [`old/`](./old/README.md). Its GitHub workflows are in `old/.github/` and are no longer run.

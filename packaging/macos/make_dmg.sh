@@ -1,15 +1,15 @@
 #!/bin/bash
-# Build Pythonizer.app from a compiled binary and pack it into a DMG.
-# Usage: packaging/macos/make_dmg.sh <path/to/pythonizer binary> <output.dmg>
+# Build EduPython.app from a compiled binary and pack it into a DMG.
+# Usage: packaging/macos/make_dmg.sh <path/to/edupython binary> <output.dmg>
 set -euo pipefail
 BIN="$1"; OUT="$2"
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$HERE/../.."
 VERSION="$(grep -m1 '^version' "$ROOT/Cargo.toml" | cut -d'"' -f2)"
 STAGE="$(mktemp -d)"
-APP="$STAGE/Pythonizer.app"
+APP="$STAGE/EduPython.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
-cp "$BIN" "$APP/Contents/MacOS/pythonizer"
+cp "$BIN" "$APP/Contents/MacOS/edupython"
 cp "$ROOT/assets/icon.icns" "$APP/Contents/Resources/icon.icns"
 sed "s/VERSION/$VERSION/g" "$HERE/Info.plist" > "$APP/Contents/Info.plist"
 # Ad-hoc signature (required on Apple Silicon). Replace "-" with a
@@ -17,6 +17,6 @@ sed "s/VERSION/$VERSION/g" "$HERE/Info.plist" > "$APP/Contents/Info.plist"
 codesign --force --deep --sign "${MACOS_SIGN_IDENTITY:--}" "$APP"
 ln -s /Applications "$STAGE/Applications"
 rm -f "$OUT"
-hdiutil create -volname "Pythonizer" -srcfolder "$STAGE" -ov -format UDZO "$OUT"
+hdiutil create -volname "EduPython" -srcfolder "$STAGE" -ov -format UDZO "$OUT"
 rm -rf "$STAGE"
 echo "Created $OUT"

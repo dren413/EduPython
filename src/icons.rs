@@ -20,6 +20,7 @@ pub enum Icon {
     Moon,
     Plus,
     Dot,
+    Trash,
 }
 
 /// Paint `icon` into the square `rect` using `color`.
@@ -90,6 +91,16 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Plus => {
             painter.line_segment([p(0.5, 0.16), p(0.5, 0.84)], stroke);
             painter.line_segment([p(0.16, 0.5), p(0.84, 0.5)], stroke);
+        }
+        Icon::Trash => {
+            // lid with handle
+            painter.line_segment([p(0.14, 0.24), p(0.86, 0.24)], stroke);
+            painter.add(Shape::line(vec![p(0.38, 0.24), p(0.38, 0.12), p(0.62, 0.12), p(0.62, 0.24)], stroke));
+            // can, slightly narrower at the bottom
+            painter.add(Shape::line(vec![p(0.22, 0.32), p(0.28, 0.90), p(0.72, 0.90), p(0.78, 0.32)], stroke));
+            // ribs
+            painter.line_segment([p(0.42, 0.40), p(0.43, 0.80)], stroke);
+            painter.line_segment([p(0.58, 0.40), p(0.57, 0.80)], stroke);
         }
         Icon::Dot => {
             painter.circle_filled(p(0.5, 0.5), s * 0.28, color);

@@ -66,7 +66,7 @@ impl PythonExec {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Source {
-    /// From the school's pythonizer.ini
+    /// From the school's edupython.ini
     School,
     Bundled,
     Custom,
@@ -154,7 +154,7 @@ fn bundled_candidates() -> Vec<PythonExec> {
     let Some(dir) = exe.parent() else { return vec![] };
     // A `python-runtime` folder next to the program also works (portable folder).
     let mut roots: Vec<PathBuf> = vec![dir.join("python-runtime")];
-    // macOS .app bundle: Contents/MacOS/pythonizer → Contents/Resources
+    // macOS .app bundle: Contents/MacOS/edupython → Contents/Resources
     roots.push(dir.join("../Resources/python-runtime"));
     roots
         .into_iter()
@@ -201,7 +201,7 @@ fn system_candidates() -> Vec<PythonExec> {
 }
 
 /// Find an interpreter. Order:
-/// 1. the school's pythonizer.ini paths (always first)
+/// 1. the school's edupython.ini paths (always first)
 /// 2. if the ini allows it (or there is none): bundled → user choice → automatic search
 pub fn detect(cfg: &SchoolConfig, custom: Option<&str>) -> PythonInfo {
     let extra = &cfg.packages_path;
@@ -409,7 +409,7 @@ mod tests {
         if info.source == Source::NotFound {
             return; // no Python on this machine
         }
-        let dir = std::env::temp_dir().join(format!("pythonizer-run-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("edupython-run-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("main.py"), "n = input('Name? ')\nprint('Hi', n, 'é')\nraise ValueError('boom')\n").unwrap();
         let ctx = eframe::egui::Context::default();
@@ -465,7 +465,7 @@ mod tests {
             return;
         }
         let cfg = SchoolConfig {
-            source: Some(PathBuf::from("pythonizer.ini")),
+            source: Some(PathBuf::from("edupython.ini")),
             python_paths: vec!["/no/such/python".into(), auto.exec.command.clone()],
             fallback_search: false,
             packages: vec!["json".into(), "no_such_module_xyz".into()],
