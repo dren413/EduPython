@@ -7,6 +7,8 @@ use eframe::egui::{
     self, Align, Color32, Context, Id, Key, KeyboardShortcut, Layout, Modifiers, RichText, Ui, ViewportCommand,
 };
 
+use crate::booklet::Booklet;
+use crate::config::SchoolConfig;
 use crate::console::{Console, ConsoleAction, Kind, parse_traceback_location};
 use crate::editor::{self, EditorOptions};
 use crate::icons::{Icon, IconButton};
@@ -75,6 +77,9 @@ pub struct PythonizerApp {
     dialog_result: Option<bool>,
     /// App icon shown on the welcome screen.
     logo: Option<egui::TextureHandle>,
+    /// pythonizer.ini installed by the school (or defaults).
+    school: SchoolConfig,
+    booklet: Option<Booklet>,
 }
 
 fn shortcut(m: Modifiers, k: Key) -> KeyboardShortcut {
@@ -87,6 +92,11 @@ impl PythonizerApp {
         let ctx = &cc.egui_ctx;
         ctx.set_theme(if settings.dark { egui::Theme::Dark } else { egui::Theme::Light });
         ctx.set_zoom_factor(settings.ui_zoom.clamp(0.6, 2.5));
+        // Zoom (booklet, UML) with Ctrl + mouse wheel on every platform, and also
+        // Cmd + wheel on a Mac. Trackpad pinch works everywhere.
+        ctx.options_mut(|o| {
+            o.input_options.zoom_modifier = Modifiers { ctrl: true, command: true, mac_cmd: true, ..Default::default() };
+        });
         ctx.global_style_mut(|s| {
             s.spacing.button_padding = egui::vec2(8.0, 4.0);
         });
@@ -97,10 +107,15 @@ impl PythonizerApp {
             ctx.load_texture("pythonizer_logo", image, options)
         });
 
-        let python_rx = Some(python::detect_async(settings.python_command.clone(), ctx.clone()));
+        let school = SchoolConfig::load();
+        let booklet = school.booklet.clone().map(|p| Booklet::new(p, school.booklet_title.clone(), settings.booklet_page));
+        let custom = if school.allow_change { settings.python_command.clone() } else { None };
+        let python_rx = Some(python::detect_async(school.clone(), custom, ctx.clone()));
         let mut app = Self {
             settings,
             logo,
+            school,
+            booklet,
             project: None,
             active: 0,
             python: None,
@@ -259,6 +274,13 @@ impl PythonizerApp {
 
     // ── running ───────────────────────────────────────────────────────────
 
+    /// Look for Python again (in the background).
+    fn redetect_python(&mut self, ctx: &Context) {
+        let custom = if self.school.allow_change { self.settings.python_command.clone() } else { None };
+        self.python = None;
+        self.python_rx = Some(python::detect_async(self.school.clone(), custom, ctx.clone()));
+    }
+
     fn python_ready(&mut self) -> Option<PythonInfo> {
         match &self.python {
             None => {
@@ -266,10 +288,14 @@ impl PythonizerApp {
                 None
             }
             Some(info) if info.source == Source::NotFound => {
-                self.error(
-                    "No Python 3 interpreter was found. Install Python from python.org, \
-                     or choose one in File > Python Interpreter…",
-                );
+                if self.school.allow_change {
+                    self.error(
+                        "No Python 3 interpreter was found. Install Python from python.org, \
+                         or choose one in File > Python Interpreter…",
+                    );
+                } else {
+                    self.error("No Python 3 interpreter was found. Please tell your teacher.");
+                }
                 None
             }
             Some(info) => Some(info.clone()),
@@ -353,8 +379,7 @@ impl PythonizerApp {
     fn after_exit(&mut self, code: Option<i32>, ctx: &Context) {
         if self.run_kind == RunKind::PipInstall {
             self.info("Checking Python again…");
-            self.python = None;
-            self.python_rx = Some(python::detect_async(self.settings.python_command.clone(), ctx.clone()));
+            self.redetect_python(ctx);
             return;
         }
         // Mark the last line of *our* code mentioned in the traceback.
@@ -374,8 +399,13 @@ impl PythonizerApp {
                 self.goto = Some((idx, *line));
             }
         }
-        if self.stderr_buf.contains("No module named 'pygame'") {
-            self.console.push(Kind::Hint, "Tip: pygame is not installed. Use Run > Install pygame.\n");
+        if let Some(module) = missing_module(&self.stderr_buf) {
+            let tip = if module == "pygame" && self.school.allow_install {
+                "Tip: pygame is not installed. Use Run > Install pygame.\n".to_string()
+            } else {
+                format!("Tip: the package '{module}' is not installed on this computer. Ask your teacher.\n")
+            };
+            self.console.push(Kind::Hint, &tip);
         }
         self.error_marker = marker;
         match code {
@@ -561,6 +591,12 @@ impl PythonizerApp {
         if pressed(shortcut(cmd, Key::O)) {
             self.request(Pending::OpenProject(None));
         }
+        if self.booklet.is_some() && pressed(shortcut(cmd, Key::F)) {
+            self.settings.show_booklet = true;
+            if let Some(b) = self.booklet.as_mut() {
+                b.focus_search();
+            }
+        }
         if self.project.is_some() && pressed(shortcut(cmd, Key::T)) {
             self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
         }
@@ -615,7 +651,7 @@ impl PythonizerApp {
                     }
                 }
                 ui.separator();
-                if ui.button("Python Interpreter…").clicked() {
+                if ui.button(if self.school.allow_change { "Python Interpreter…" } else { "Python Interpreter" }).clicked() {
                     let input = self
                         .settings
                         .python_command
@@ -649,9 +685,11 @@ impl PythonizerApp {
                 if ui.add_enabled(running, egui::Button::new("Stop").shortcut_text("Shift+F5")).clicked() {
                     self.stop();
                 }
-                ui.separator();
-                if ui.add_enabled(!running, egui::Button::new("Install pygame")).clicked() {
-                    self.install_pygame(&ctx);
+                if self.school.allow_install {
+                    ui.separator();
+                    if ui.add_enabled(!running, egui::Button::new("Install pygame")).clicked() {
+                        self.install_pygame(&ctx);
+                    }
                 }
             });
             ui.menu_button("View", |ui| {
@@ -659,8 +697,8 @@ impl PythonizerApp {
                 if ui.checkbox(&mut dark, "Dark mode").changed() {
                     self.set_dark(&ctx, dark);
                 }
-                if ui.checkbox(&mut self.settings.show_files, "Files panel").changed()
-                    || ui.checkbox(&mut self.settings.show_uml, "UML class diagram").changed()
+                if ui.checkbox(&mut self.settings.show_uml, "UML class diagram").changed()
+                    || ui.add_enabled(self.booklet.is_some(), egui::Checkbox::new(&mut self.settings.show_booklet, "Booklet")).changed()
                 {
                     self.settings.save();
                 }
@@ -736,8 +774,16 @@ impl PythonizerApp {
                 if ui.add(IconButton::new(if dark { Icon::Sun } else { Icon::Moon })).on_hover_text("Light / dark mode").clicked() {
                     self.set_dark(&ctx, !dark);
                 }
-                if ui.selectable_label(self.settings.show_files, "Files").on_hover_text("Show the file list (right)").clicked() {
-                    self.settings.show_files = !self.settings.show_files;
+                let booklet_hint = match &self.booklet {
+                    Some(b) => format!("Show the booklet ({})", b.title),
+                    None => format!(
+                        "No booklet installed.\nIT can put {} (or a pythonizer.ini) next to the Pythonizer program.",
+                        crate::config::DEFAULT_BOOKLET
+                    ),
+                };
+                let booklet_btn = ui.add_enabled(self.booklet.is_some(), egui::Button::selectable(self.settings.show_booklet && self.booklet.is_some(), "Booklet"));
+                if booklet_btn.on_hover_text(booklet_hint).on_disabled_hover_text("No booklet installed").clicked() {
+                    self.settings.show_booklet = !self.settings.show_booklet;
                     self.settings.save();
                 }
                 if ui.selectable_label(self.settings.show_uml, "UML").on_hover_text("Show the class diagram (left)").clicked() {
@@ -761,10 +807,12 @@ impl PythonizerApp {
                         let ok = info.source != Source::NotFound;
                         let dot = if ok { Color32::from_rgb(70, 180, 90) } else { Color32::from_rgb(220, 70, 70) };
                         let text = if ok { info.version.clone() } else { "No Python found".into() };
-                        let pg = if info.has_pygame { "pygame installed" } else { "pygame not installed" };
+                        let missing = info.missing();
+                        let dot = if ok && !missing.is_empty() { Color32::from_rgb(230, 160, 40) } else { dot };
+                        let click = if self.school.allow_change { "Click to change" } else { "Click for details" };
                         let resp = ui
                             .add(IconButton::new(Icon::Dot).text(text).icon_color(dot).frame(false))
-                            .on_hover_text(format!("{}\n({})\n{}\nClick to change", info.exec.display(), info.source.label(), pg));
+                            .on_hover_text(format!("{}\n({})\n{}\n{click}", info.exec.display(), info.source.label(), info.packages_summary()));
                         if resp.clicked() {
                             let input = self.settings.python_command.clone().unwrap_or_else(|| info.exec.command.clone());
                             self.dialog = Some(Dialog::Python { input, error: String::new() });
@@ -775,39 +823,61 @@ impl PythonizerApp {
         });
     }
 
-    fn files_panel(&mut self, ui: &mut Ui) {
+    /// One tab per project file. Tabs cannot be closed: a file disappears
+    /// only when it is deleted (right-click > Delete).
+    fn file_tabs(&mut self, ui: &mut Ui) {
         let Some(p) = self.project.as_mut() else { return };
-        ui.add_space(4.0);
-        ui.horizontal(|ui| {
-            ui.strong("Files");
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if ui.add(IconButton::new(Icon::Plus).small()).on_hover_text("New file (Ctrl+T)").clicked() {
-                    self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
-                }
-            });
-        });
-        ui.separator();
         let mut set_main = None;
-        egui::ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
+        let editor_bg = if self.settings.dark { Color32::from_rgb(40, 44, 52) } else { Color32::from_rgb(253, 253, 253) };
+        let green = Color32::from_rgb(46, 160, 67);
+        let accent = ui.visuals().selection.stroke.color;
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
             for (i, f) in p.files.iter().enumerate() {
                 let is_main = f.name == p.main_file;
-                let mut label = String::new();
-                label.push_str("     ");
-                label.push_str(&f.name);
-                if f.is_dirty() {
-                    label.push_str("  •");
+                let active = self.active == i;
+                let font = egui::TextStyle::Button.resolve(ui.style());
+                let text_color = if active { ui.visuals().strong_text_color() } else { ui.visuals().text_color() };
+                let galley = ui.painter().layout_no_wrap(f.name.clone(), font, text_color);
+                let icon_w = if is_main { 14.0 } else { 0.0 };
+                let dot_w = if f.is_dirty() { 12.0 } else { 0.0 };
+                let size = egui::vec2(galley.size().x + icon_w + dot_w + 20.0, ui.spacing().interact_size.y + 4.0);
+                let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter();
+                    let radius = egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 };
+                    let fill = if active {
+                        editor_bg
+                    } else if resp.hovered() {
+                        ui.visuals().widgets.hovered.weak_bg_fill
+                    } else {
+                        ui.visuals().widgets.inactive.weak_bg_fill
+                    };
+                    painter.rect_filled(rect, radius, fill);
+                    if active {
+                        let top = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0));
+                        painter.rect_filled(top, egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 }, accent);
+                    }
+                    let mut x = rect.left() + 10.0;
+                    if is_main {
+                        let r = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - 4.5), egui::Vec2::splat(9.0));
+                        crate::icons::paint(painter, r, Icon::Run, green);
+                        x += icon_w;
+                    }
+                    let pos = egui::pos2(x, rect.center().y - galley.size().y / 2.0);
+                    let gw = galley.size().x;
+                    painter.galley(pos, galley, text_color);
+                    if f.is_dirty() {
+                        painter.circle_filled(egui::pos2(pos.x + gw + 8.0, rect.center().y), 3.0, Color32::from_rgb(220, 160, 60));
+                    }
                 }
-                let mut text = RichText::new(label);
-                if is_main {
-                    text = text.strong();
-                }
-                let resp = ui.selectable_label(self.active == i, text);
-                if is_main {
-                    let h = 9.0;
-                    let r = egui::Rect::from_min_size(egui::pos2(resp.rect.left() + 5.0, resp.rect.center().y - h / 2.0), egui::Vec2::splat(h));
-                    crate::icons::paint(ui.painter(), r, Icon::Run, Color32::from_rgb(46, 160, 67));
-                }
-                let resp = if is_main { resp.on_hover_text("Main file – started with Run (F5)") } else { resp };
+                let hover = match (is_main, f.is_dirty()) {
+                    (true, true) => "Main file, started with Run (F5). Not saved yet.\nRight-click: rename, delete",
+                    (true, false) => "Main file, started with Run (F5).\nRight-click: rename, delete",
+                    (false, true) => "Not saved yet.\nRight-click: set as main file, rename, delete",
+                    (false, false) => "Right-click: set as main file, rename, delete",
+                };
+                let resp = resp.on_hover_text(hover);
                 if resp.clicked() {
                     self.active = i;
                 }
@@ -818,10 +888,14 @@ impl PythonizerApp {
                     if ui.button("Rename…").clicked() {
                         self.dialog = Some(Dialog::RenameFile { idx: i, name: f.name.clone(), error: String::new() });
                     }
-                    if ui.button("Delete…").clicked() {
+                    if ui.add_enabled(p.files.len() > 1, egui::Button::new("Delete…")).clicked() {
                         self.dialog = Some(Dialog::ConfirmDeleteFile { idx: i });
                     }
                 });
+            }
+            ui.add_space(4.0);
+            if ui.add(IconButton::new(Icon::Plus).small()).on_hover_text("New file (Ctrl+T)").clicked() {
+                self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
             }
         });
         if let Some(i) = set_main {
@@ -835,28 +909,22 @@ impl PythonizerApp {
             self.welcome(ui);
             return;
         }
+        self.active = self.active.min(self.project.as_ref().unwrap().files.len() - 1);
+        ui.horizontal(|ui| {
+            let line = self.cursor_line;
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if let Some(l) = line {
+                    ui.label(RichText::new(format!("Line {l}")).weak());
+                }
+                ui.with_layout(Layout::left_to_right(Align::Center), |ui| self.file_tabs(ui));
+            });
+        });
         let idx = self.active.min(self.project.as_ref().unwrap().files.len() - 1);
         self.active = idx;
         let id = self.editor_id(idx);
         let dark = self.settings.dark;
         let p = self.project.as_mut().unwrap();
         let file = &mut p.files[idx];
-        let is_main = file.name == p.main_file;
-
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(&file.name).strong());
-            if is_main {
-                ui.label(RichText::new("main file").small().weak());
-            }
-            if file.is_dirty() {
-                ui.label(RichText::new("• not saved").small().color(Color32::from_rgb(220, 160, 60)));
-            }
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if let Some(l) = self.cursor_line {
-                    ui.label(RichText::new(format!("Line {l}")).weak());
-                }
-            });
-        });
 
         let error_line = self.error_marker.as_ref().filter(|(f, _)| *f == file.name).map(|(_, l)| *l);
         let goto_line = self.goto.filter(|(i, _)| *i == idx).map(|(_, l)| l);
@@ -1025,12 +1093,43 @@ impl PythonizerApp {
                             ui.label("Version:");
                             ui.label(format!("{} ({})", info.version, info.source.label()));
                             ui.end_row();
-                            ui.label("pygame:");
-                            ui.label(if info.has_pygame { "installed" } else { "not installed (Run > Install pygame)" });
-                            ui.end_row();
+                            for (name, ok) in &info.packages {
+                                ui.label(format!("{name}:"));
+                                if *ok {
+                                    ui.label("installed");
+                                } else if name == "pygame" && self.school.allow_install {
+                                    ui.label("not installed (Run > Install pygame)");
+                                } else {
+                                    ui.label(RichText::new("not installed").color(Color32::from_rgb(220, 70, 70)));
+                                }
+                                ui.end_row();
+                            }
+                            if !info.exec.extra_path.is_empty() {
+                                ui.label("Package folders:");
+                                ui.label(info.exec.extra_path.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n"));
+                                ui.end_row();
+                            }
+                            if let Some(ini) = &self.school.source {
+                                ui.label("School settings:");
+                                ui.label(ini.display().to_string());
+                                ui.end_row();
+                            }
                         });
                         ui.separator();
                     }
+                    if !self.school.allow_change {
+                        ui.label(RichText::new("Python is set up by your school and cannot be changed here.").weak());
+                        ui.add_space(4.0);
+                        ui.horizontal(|ui| {
+                            if ui.button("Check again").clicked() {
+                                self.redetect_python(ctx);
+                                keep = false;
+                            }
+                            if ui.button("Close").clicked() || enter {
+                                keep = false;
+                            }
+                        });
+                    } else {
                     ui.label("Use this interpreter:");
                     ui.horizontal(|ui| {
                         ui.add(egui::TextEdit::singleline(input).hint_text("e.g. C:\\Python313\\python.exe or /usr/bin/python3").desired_width(300.0));
@@ -1047,8 +1146,7 @@ impl PythonizerApp {
                                 Ok(_) => {
                                     self.settings.python_command = Some(input.trim().to_string());
                                     self.settings.save();
-                                    self.python = None;
-                                    self.python_rx = Some(python::detect_async(self.settings.python_command.clone(), ctx.clone()));
+                                    self.redetect_python(ctx);
                                     keep = false;
                                 }
                                 Err(e) => *error = e,
@@ -1057,14 +1155,14 @@ impl PythonizerApp {
                         if ui.button("Find automatically").clicked() {
                             self.settings.python_command = None;
                             self.settings.save();
-                            self.python = None;
-                            self.python_rx = Some(python::detect_async(None, ctx.clone()));
+                            self.redetect_python(ctx);
                             keep = false;
                         }
                         if ui.button("Close").clicked() {
                             keep = false;
                         }
                     });
+                    }
                 }
                 Dialog::About => {
                     ui.vertical_centered(|ui| {
@@ -1091,6 +1189,7 @@ impl PythonizerApp {
                             ("Ctrl+S", "Save"),
                             ("Ctrl+N / Ctrl+O", "New / open project"),
                             ("Ctrl+T", "New file"),
+                            ("Ctrl+F", "Search the booklet"),
                             ("Ctrl+/", "Comment / uncomment lines"),
                             ("Tab / Shift+Tab", "Indent / unindent (also several lines)"),
                             ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"),
@@ -1367,6 +1466,9 @@ impl eframe::App for PythonizerApp {
             } else {
                 self.close_project_quietly();
                 self.settings.ui_zoom = ctx.zoom_factor();
+                if let Some(b) = &self.booklet {
+                    self.settings.booklet_page = b.page;
+                }
                 self.settings.save();
             }
         }
@@ -1394,6 +1496,12 @@ impl eframe::App for PythonizerApp {
             self.toolbar(ui);
             ui.add_space(3.0);
         });
+
+        if self.settings.show_booklet {
+            if let Some(b) = self.booklet.as_mut() {
+                egui::Panel::right("booklet").resizable(true).default_size(520.0).min_size(240.0).show(ui, |ui| b.show(ui));
+            }
+        }
 
         if self.project.is_some() {
             let running = self.is_running();
@@ -1430,9 +1538,6 @@ impl eframe::App for PythonizerApp {
                 }
             });
 
-            if self.settings.show_files {
-                egui::Panel::right("files").resizable(true).default_size(170.0).min_size(110.0).show(ui, |ui| self.files_panel(ui));
-            }
             if self.settings.show_uml {
                 let mut action = None;
                 egui::Panel::left("uml").resizable(true).default_size(460.0).min_size(220.0).show(ui, |ui| {
@@ -1451,6 +1556,16 @@ impl eframe::App for PythonizerApp {
 
     fn on_exit(&mut self) {
         self.close_project_quietly();
+        if let Some(b) = &self.booklet {
+            self.settings.booklet_page = b.page;
+        }
         self.settings.save();
     }
+}
+
+/// The module name from "ModuleNotFoundError: No module named 'x'" (top-level package).
+fn missing_module(stderr: &str) -> Option<String> {
+    let rest = stderr.split("No module named '").nth(1)?;
+    let name = rest.split('\'').next()?;
+    Some(name.split('.').next().unwrap_or(name).to_string())
 }
