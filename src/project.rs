@@ -24,7 +24,7 @@ impl Template {
         match self {
             Template::Script => "Script (2CB) – input, print, if, loops",
             Template::Classes => "Classes (1CB) – a class in its own file",
-            Template::Pygame => "Pygame (1CB) – a small game with classes",
+            Template::Pygame => "Pygame (1CB) – Pong with Paddle and Ball classes",
             Template::Empty => "Empty – just main.py",
         }
     }
@@ -34,7 +34,7 @@ impl Template {
             Template::Empty => vec![("main.py", "")],
             Template::Script => vec![("main.py", TEMPLATE_SCRIPT)],
             Template::Classes => vec![("main.py", TEMPLATE_CLASSES_MAIN), ("point.py", TEMPLATE_CLASSES_POINT)],
-            Template::Pygame => vec![("main.py", TEMPLATE_PYGAME_MAIN), ("ball.py", TEMPLATE_PYGAME_BALL)],
+            Template::Pygame => vec![("main.py", TEMPLATE_PYGAME_PONG)],
         }
     }
 }
@@ -73,56 +73,8 @@ const TEMPLATE_CLASSES_POINT: &str = r#"class Point:
         return ((self.x - other.x) ** 2 + (self.y - other.y) ** 2) ** 0.5
 "#;
 
-const TEMPLATE_PYGAME_MAIN: &str = r#"import pygame
-from ball import Ball
-
-pygame.init()
-screen = pygame.display.set_mode((640, 480))
-pygame.display.set_caption("My Game")
-clock = pygame.time.Clock()
-
-ball = Ball(320, 240, 20)
-
-running = True
-while running:
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            running = False
-
-    ball.update(screen.get_width(), screen.get_height())
-
-    screen.fill((30, 30, 46))
-    ball.draw(screen)
-    pygame.display.flip()
-    clock.tick(60)
-
-pygame.quit()
-"#;
-
-const TEMPLATE_PYGAME_BALL: &str = r#"import pygame
-
-
-class Ball:
-    def __init__(self, x: int, y: int, radius: int):
-        self.x = x
-        self.y = y
-        self.radius = radius
-        self.speed = (4, 3)
-        self.color = (255, 200, 0)
-
-    def update(self, width: int, height: int):
-        dx, dy = self.speed
-        self.x = self.x + dx
-        self.y = self.y + dy
-        if self.x < self.radius or self.x > width - self.radius:
-            dx = -dx
-        if self.y < self.radius or self.y > height - self.radius:
-            dy = -dy
-        self.speed = (dx, dy)
-
-    def draw(self, screen: pygame.Surface):
-        pygame.draw.circle(screen, self.color, (self.x, self.y), self.radius)
-"#;
+/// Exercise 5.19 (1CB): Pong with a Paddle and a Ball class.
+const TEMPLATE_PYGAME_PONG: &str = include_str!("../assets/templates/pong.py");
 
 #[derive(Serialize, Deserialize, Default, Debug)]
 #[serde(default)]
@@ -363,5 +315,19 @@ mod tests {
         assert_eq!(p2.uml_positions["Player"], [10.0, 20.0]);
         assert!(python_file_name("1bad").is_err());
         let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn pong_template_shows_paddle_and_ball() {
+        let files = Template::Pygame.files();
+        assert_eq!(files.len(), 1);
+        let classes = crate::uml::parser::parse_project(files.iter().map(|(n, t)| (*n, *t)));
+        let names: Vec<&str> = classes.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["Paddle", "Ball"]);
+        assert!(classes.iter().all(|c| c.bases.is_empty()));
+        let ball = &classes[1];
+        for a in ["x", "y", "r", "v", "score", "active", "vx", "vy", "gy"] {
+            assert!(ball.attributes.iter().any(|x| x.name == a), "Ball.{a} missing");
+        }
     }
 }
