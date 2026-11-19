@@ -45,7 +45,7 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   **methods** with typed parameters and return types, or a **constructor**, or to **delete a method**.
   You can type types in UML style (`(int,int)`); the code gets `tuple[int, int]`.
 - **Files (right)**: add, rename and delete files, and choose the main file (▶).
-- **Templates**: Script (2CB), Classes (1CB), Pygame (1CB), Empty.
+- **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
   *Run ▸ Install pygame* installs pygame into the interpreter in use.
 - Light/dark mode and interface zoom (Ctrl +/−).
