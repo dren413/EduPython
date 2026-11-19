@@ -10,7 +10,7 @@ on:
   push:
     tags: ['v2*']
     branches: [main]
-    paths-ignore: ['old/**', '**.md']
+    paths-ignore: ['**.md']
   workflow_dispatch:
 
 permissions:

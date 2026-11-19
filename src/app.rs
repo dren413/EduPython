@@ -184,7 +184,7 @@ impl EduPythonApp {
         if project.legacy {
             self.console.push(
                 Kind::Hint,
-                "This project was made with the old tkinter version (EduPython 1).\n\
+                "This project was made with an older version that had a visual tkinter designer.\n\
                  gui.py is now shown as a normal file – the visual GUI designer no longer exists.\n",
             );
         }
@@ -1156,7 +1156,7 @@ impl EduPythonApp {
                         ui.label(format!("Version {VERSION} (native)"));
                         ui.add_space(6.0);
                         ui.label("Dren Gashi");
-                        ui.hyperlink_to("github.com/dren413/Pythonizer", "https://github.com/dren413/Pythonizer");
+                        ui.hyperlink_to("github.com/dren413/EduPython", "https://github.com/dren413/EduPython");
                         ui.add_space(6.0);
                         ui.label(RichText::new("A Python editor for classes 2CB (code) and 1CB (classes, UML, pygame).").weak());
                         ui.add_space(8.0);

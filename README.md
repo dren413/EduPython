@@ -9,14 +9,14 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/dren413/Pythonizer/releases">Downloads</a>
+  <a href="https://github.com/dren413/EduPython/releases">Downloads</a>
   ·
-  <a href="https://github.com/dren413/Pythonizer/releases/latest">Latest Release</a>
+  <a href="https://github.com/dren413/EduPython/releases/latest">Latest Release</a>
 </p>
 
 ---
 
-EduPython (formerly Pythonizer) was created from a teacher's perspective to fill a gap in teaching tools.
+EduPython was created from a teacher's perspective to fill a gap in teaching tools.
 Version 2 is a native rewrite in Rust. It drops the tkinter GUI designer and adds a live, two-way
 UML class diagram. There is no web view, no Node.js, and nothing to install for pupils.
 
@@ -129,8 +129,3 @@ Python builds come from [python-build-standalone](https://github.com/astral-sh/p
 **macOS note:** the DMG gets an ad-hoc signature only. On first launch pupils must
 right-click ▸ Open (or allow it in System Settings ▸ Privacy & Security). To avoid that, set
 `MACOS_SIGN_IDENTITY` to a Developer ID certificate and notarize the DMG.
-
-## Previous version
-
-The earlier Tauri/React version, then called Pythonizer, with the visual tkinter designer (v1.x) is kept in
-[`old/`](./old/README.md). Its GitHub workflows are in `old/.github/` and are no longer run.

@@ -15,8 +15,6 @@
 use std::path::{Path, PathBuf};
 
 pub const INI_NAME: &str = "edupython.ini";
-/// The ini name from when the app was called Pythonizer; still accepted.
-const LEGACY_INI_NAME: &str = "pythonizer.ini";
 pub const DEFAULT_BOOKLET: &str = "booklet.pdf";
 
 #[derive(Clone, Debug, PartialEq)]
@@ -62,9 +60,7 @@ impl SchoolConfig {
     pub fn load() -> Self {
         let dirs = search_dirs();
         let env_ini = std::env::var_os("EDUPYTHON_CONFIG").map(PathBuf::from).filter(|p| p.is_file());
-        let ini = env_ini.or_else(|| {
-            dirs.iter().flat_map(|d| [d.join(INI_NAME), d.join(LEGACY_INI_NAME)]).find(|p| p.is_file())
-        });
+        let ini = env_ini.or_else(|| dirs.iter().map(|d| d.join(INI_NAME)).find(|p| p.is_file()));
         let mut cfg = match &ini {
             Some(path) => match std::fs::read_to_string(path) {
                 Ok(text) => Self::parse(&text, path),
