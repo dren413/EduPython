@@ -17,6 +17,12 @@
 
 ---
 
+> **New: Pythonizer 2 (native).** A rewrite in Rust lives in [`rust/`](./rust/README.md).
+> It drops the tkinter designer and adds a live, **two-way UML class diagram**, a console
+> with `input()` support, and templates for 2CB (code) and 1CB (classes, pygame).
+> Downloads are a portable Windows `.exe` and a macOS `.dmg` with Python and pygame built in,
+> so there is nothing to install. The Tauri/React version described below is the previous version.
+
 Pythonizer was created from a teacher perspective to fill a gap in pedagogical tools. It makes GUI building faster, but the point is not just speed. The goal is to help learners understand how a desktop interface maps to readable `tkinter` code.
 
 Instead of hiding the code behind a purely visual editor, Pythonizer keeps the generated interface structure visible and predictable. That makes it useful for classroom demos, beginner projects, and assignments where students should learn both GUI design and program structure.
