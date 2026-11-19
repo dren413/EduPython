@@ -684,6 +684,7 @@ impl EduPythonApp {
                     self.set_dark(&ctx, dark);
                 }
                 if ui.checkbox(&mut self.settings.show_uml, "UML class diagram").changed()
+                    || ui.add_enabled(self.settings.show_uml, egui::Checkbox::new(&mut self.settings.uml_grid, "UML grid")).changed()
                     || ui.add_enabled(self.booklet.is_some(), egui::Checkbox::new(&mut self.settings.show_booklet, "Booklet")).changed()
                 {
                     self.settings.save();
@@ -1528,6 +1529,7 @@ impl eframe::App for EduPythonApp {
                 let mut action = None;
                 egui::Panel::left("uml").resizable(true).default_size(460.0).min_size(220.0).show(ui, |ui| {
                     let p = self.project.as_mut().unwrap();
+                    self.uml.show_grid = self.settings.uml_grid;
                     action = self.uml.show(ui, &self.classes, &mut p.uml_positions, self.settings.dark);
                 });
                 if let Some(a) = action {

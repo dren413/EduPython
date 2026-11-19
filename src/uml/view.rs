@@ -35,11 +35,13 @@ pub struct UmlView {
     drag: Option<Drag>,
     menu_target: Option<(usize, Part)>,
     pub fit_request: bool,
+    /// Draw the dotted background grid (View > UML grid).
+    pub show_grid: bool,
 }
 
 impl Default for UmlView {
     fn default() -> Self {
-        Self { pan: vec2(0.0, 0.0), zoom: 1.0, drag: None, menu_target: None, fit_request: true }
+        Self { pan: vec2(0.0, 0.0), zoom: 1.0, drag: None, menu_target: None, fit_request: true, show_grid: true }
     }
 }
 
@@ -180,7 +182,7 @@ impl UmlView {
         painter.rect_filled(canvas, 0.0, col.bg);
         // dotted grid
         let step = 24.0 * self.zoom;
-        if step > 8.0 {
+        if self.show_grid && step > 8.0 {
             let start = origin + vec2(self.pan.x.rem_euclid(step), self.pan.y.rem_euclid(step));
             let mut x = start.x;
             while x < canvas.right() {
