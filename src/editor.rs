@@ -335,14 +335,27 @@ fn apply_smart_key(ui: &Ui, id: Id, text: &mut String, key: EditKey) -> bool {
     true
 }
 
-/// Convenience used by the menu: toggle comment for the focused editor.
-pub fn toggle_comment(ctx: &egui::Context, id: Id, text: &mut String) -> bool {
+/// Whether the editor `id` has something to undo / redo.
+pub fn can_undo_redo(ctx: &egui::Context, id: Id, text: &str) -> (bool, bool) {
+    let Some(state) = TextEdit::load_state(ctx, id) else { return (false, false) };
+    let current = (state.cursor.char_range().unwrap_or_default(), text.to_owned());
+    let undoer = state.undoer();
+    (undoer.has_undo(&current), undoer.has_redo(&current))
+}
+
+/// Undo (or redo) the last change in editor `id`, using the editor's own
+/// history (the same one Ctrl+Z uses). Returns true if the text changed.
+pub fn undo_redo(ctx: &egui::Context, id: Id, text: &mut String, redo: bool) -> bool {
     let Some(mut state) = TextEdit::load_state(ctx, id) else { return false };
-    let Some(range) = state.cursor.char_range() else { return false };
-    let (a, b) = (range.primary.index.0, range.secondary.index.0);
-    let Some((s, e)) = apply_key(text, a.min(b), a.max(b), EditKey::ToggleComment) else { return false };
-    state.cursor.set_char_range(Some(CCursorRange::two(CCursor::new(s), CCursor::new(e))));
+    let current = (state.cursor.char_range().unwrap_or_default(), text.clone());
+    let mut undoer = state.undoer();
+    let restored = if redo { undoer.redo(&current).cloned() } else { undoer.undo(&current).cloned() };
+    let Some((range, old_text)) = restored else { return false };
+    *text = old_text;
+    state.cursor.set_char_range(Some(range));
+    state.set_undoer(undoer);
     state.store(ctx, id);
+    ctx.memory_mut(|m| m.request_focus(id));
     true
 }
 

@@ -21,6 +21,10 @@ zip = { version = "9", default-features = false, features = ["deflate"], optiona
 # Embed a zipped Python runtime (path in env var EDUPYTHON_PYTHON_ZIP at build time).
 bundled-python = ["dep:zip"]
 
+# macOS: Ctrl+V must paste like Cmd+V (same clipboard crate egui already uses).
+[target.'cfg(target_os = "macos")'.dependencies]
+arboard = { version = "3.7", default-features = false }
+
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"
 

@@ -136,13 +136,8 @@ impl EduPythonApp {
             status: String::new(),
             dialog_result: None,
         };
-        let to_open = open_arg.or_else(|| {
-            app.settings
-                .reopen_last_project
-                .then(|| app.settings.recent_projects.first().map(PathBuf::from))
-                .flatten()
-        });
-        if let Some(dir) = to_open.filter(|d| d.is_dir()) {
+        // Always start on the welcome screen, unless a folder was given on the command line.
+        if let Some(dir) = open_arg.filter(|d| d.is_dir()) {
             app.open_project(&dir);
         }
         app
@@ -401,7 +396,7 @@ impl EduPythonApp {
         }
         if let Some(module) = missing_module(&self.stderr_buf) {
             let tip = if module == "pygame" && self.school.allow_install {
-                "Tip: pygame is not installed. Use Run > Install pygame.\n".to_string()
+                "Tip: pygame is not installed. Click the Python version in the toolbar to install it.\n".to_string()
             } else {
                 format!("Tip: the package '{module}' is not installed on this computer. Ask your teacher.\n")
             };
@@ -666,29 +661,20 @@ impl EduPythonApp {
                 }
             });
             ui.menu_button("Edit", |ui| {
-                if ui.add_enabled(has_project, egui::Button::new("Toggle Comment").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND, Key::Slash)))).clicked() {
-                    let id = self.editor_id(self.active);
-                    let p = self.project.as_mut().unwrap();
-                    editor::toggle_comment(&ctx, id, &mut p.files[self.active].text);
-                }
-                ui.label(RichText::new("Undo / Redo: Ctrl+Z / Ctrl+Shift+Z (⌘ on Mac)").weak());
-            });
-            ui.menu_button("Run", |ui| {
-                let running = self.is_running();
-                let main = self.project.as_ref().map(|p| p.main_file.clone()).unwrap_or_else(|| "main.py".into());
-                if ui.add_enabled(has_project && !running, egui::Button::new(format!("Run {main}")).shortcut_text("F5")).clicked() {
-                    self.run(&ctx, false);
-                }
-                if ui.add_enabled(has_project && !running, egui::Button::new("Run Current File").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND, Key::F5)))).clicked() {
-                    self.run(&ctx, true);
-                }
-                if ui.add_enabled(running, egui::Button::new("Stop").shortcut_text("Shift+F5")).clicked() {
-                    self.stop();
-                }
-                if self.school.allow_install {
-                    ui.separator();
-                    if ui.add_enabled(!running, egui::Button::new("Install pygame")).clicked() {
-                        self.install_pygame(&ctx);
+                let id = self.editor_id(self.active);
+                let (can_undo, can_redo) = match &self.project {
+                    Some(p) => p.files.get(self.active).map_or((false, false), |f| editor::can_undo_redo(&ctx, id, &f.text)),
+                    None => (false, false),
+                };
+                let undo = ui.add_enabled(can_undo, egui::Button::new("Undo").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND, Key::Z)))).clicked();
+                let redo = ui
+                    .add_enabled(can_redo, egui::Button::new("Redo").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z))))
+                    .clicked();
+                if undo || redo {
+                    if let Some(f) = self.project.as_mut().and_then(|p| p.files.get_mut(self.active)) {
+                        if editor::undo_redo(&ctx, id, &mut f.text, redo) {
+                            self.uml_stale = true;
+                        }
                     }
                 }
             });
@@ -702,21 +688,6 @@ impl EduPythonApp {
                 {
                     self.settings.save();
                 }
-                ui.separator();
-                ui.horizontal(|ui| {
-                    ui.label("Code font size");
-                    ui.add(egui::DragValue::new(&mut self.settings.editor_font_size).range(9.0..=40.0).speed(0.2));
-                });
-                ui.horizontal(|ui| {
-                    ui.label("Interface zoom");
-                    let mut z = ctx.zoom_factor();
-                    if ui.add(egui::Slider::new(&mut z, 0.6..=2.5).step_by(0.05)).changed() {
-                        ctx.set_zoom_factor(z);
-                    }
-                });
-                ui.label(RichText::new("Tip: Ctrl/⌘ + and − zoom the whole window").weak());
-                ui.separator();
-                ui.checkbox(&mut self.settings.reopen_last_project, "Reopen last project on start");
             });
             ui.menu_button("Help", |ui| {
                 if ui.button("Keyboard Shortcuts").clicked() {
@@ -935,6 +906,12 @@ impl EduPythonApp {
             self.goto = None;
         }
         let bg = if dark { Color32::from_rgb(40, 44, 52) } else { Color32::from_rgb(253, 253, 253) };
+        // Ctrl + mouse wheel or trackpad pinch over the code changes the code size.
+        let area = ui.available_rect_before_wrap();
+        let (zoom, pointer) = ui.input(|i| (i.zoom_delta(), i.pointer.hover_pos()));
+        if pointer.is_some_and(|p| area.contains(p)) && (zoom - 1.0).abs() > 1e-4 {
+            self.settings.editor_font_size = (self.settings.editor_font_size * zoom).clamp(9.0, 40.0);
+        }
         let resp = editor::show(
             ui,
             id,
@@ -1088,6 +1065,7 @@ impl EduPythonApp {
                 }
                 Dialog::Python { input, error } => {
                     ui.heading("Python Interpreter");
+                    let mut install = false;
                     if let Some(info) = &self.python {
                         egui::Grid::new("pyinfo").num_columns(2).show(ui, |ui| {
                             ui.label("In use:");
@@ -1101,7 +1079,7 @@ impl EduPythonApp {
                                 if *ok {
                                     ui.label("installed");
                                 } else if name == "pygame" && self.school.allow_install {
-                                    ui.label("not installed (Run > Install pygame)");
+                                    install = ui.add_enabled(!self.is_running(), egui::Button::new("Install pygame")).clicked();
                                 } else {
                                     ui.label(RichText::new("not installed").color(Color32::from_rgb(220, 70, 70)));
                                 }
@@ -1119,6 +1097,10 @@ impl EduPythonApp {
                             }
                         });
                         ui.separator();
+                    }
+                    if install {
+                        self.install_pygame(ctx);
+                        keep = false;
                     }
                     if !self.school.allow_change {
                         ui.label(RichText::new("Python is set up by your school and cannot be changed here.").weak());
@@ -1193,6 +1175,7 @@ impl EduPythonApp {
                             ("Ctrl+N / Ctrl+O", "New / open project"),
                             ("Ctrl+T", "New file"),
                             ("Ctrl+F", "Search the booklet"),
+                            ("Ctrl + mouse wheel / pinch", "Zoom the code or the booklet (under the mouse)"),
                             ("Ctrl+/", "Comment / uncomment lines"),
                             ("Tab / Shift+Tab", "Indent / unindent (also several lines)"),
                             ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"),
@@ -1204,7 +1187,7 @@ impl EduPythonApp {
                             ui.end_row();
                         }
                     });
-                    ui.label(RichText::new("On a Mac, use ⌘ instead of Ctrl.").weak());
+                    ui.label(RichText::new("On a Mac, Ctrl and ⌘ both work.").weak());
                     if ui.button("Close").clicked() || enter {
                         keep = false;
                     }
@@ -1557,6 +1540,13 @@ impl eframe::App for EduPythonApp {
         self.dialogs(&ctx);
     }
 
+    /// On a Mac, Ctrl works like Cmd for every shortcut (Ctrl+S, Ctrl+Z,
+    /// Ctrl+C/V/X, Ctrl+A, …), because pupils also use Windows at school.
+    #[cfg(target_os = "macos")]
+    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        ctrl_as_cmd(raw);
+    }
+
     fn on_exit(&mut self) {
         self.close_project_quietly();
         if let Some(b) = &self.booklet {
@@ -1571,4 +1561,76 @@ fn missing_module(stderr: &str) -> Option<String> {
     let rest = stderr.split("No module named '").nth(1)?;
     let name = rest.split('\'').next()?;
     Some(name.split('.').next().unwrap_or(name).to_string())
+}
+
+/// Rewrite Ctrl (without Cmd) into Cmd in all input of this frame, and turn
+/// Ctrl+C / Ctrl+X / Ctrl+V into copy / cut / paste like egui does for Cmd.
+#[cfg(target_os = "macos")]
+fn ctrl_as_cmd(raw: &mut egui::RawInput) {
+    fn fix(m: &mut Modifiers) -> bool {
+        if m.ctrl && !m.mac_cmd {
+            m.ctrl = false;
+            m.mac_cmd = true;
+            m.command = true;
+            true
+        } else {
+            false
+        }
+    }
+    let mut events = Vec::with_capacity(raw.events.len());
+    for mut ev in std::mem::take(&mut raw.events) {
+        match &mut ev {
+            egui::Event::Key { key, pressed, modifiers, .. } => {
+                let was_ctrl = fix(modifiers);
+                let plain = !modifiers.shift && !modifiers.alt;
+                if was_ctrl && *pressed && plain {
+                    match key {
+                        Key::C => {
+                            events.push(egui::Event::Copy);
+                            continue;
+                        }
+                        Key::X => {
+                            events.push(egui::Event::Cut);
+                            continue;
+                        }
+                        Key::V => {
+                            let text = arboard::Clipboard::new().and_then(|mut c| c.get_text()).unwrap_or_default();
+                            if !text.is_empty() {
+                                events.push(egui::Event::Paste(text.replace("\r\n", "\n")));
+                            }
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            egui::Event::PointerButton { modifiers, .. }
+            | egui::Event::MouseWheel { modifiers, .. }
+            | egui::Event::ModifiersChanged(modifiers) => {
+                fix(modifiers);
+            }
+            _ => {}
+        }
+        events.push(ev);
+    }
+    raw.events = events;
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ctrl_works_like_cmd_on_mac() {
+        let ctrl = Modifiers { ctrl: true, ..Default::default() };
+        let key = |k: Key| egui::Event::Key { key: k, physical_key: None, pressed: true, repeat: false, modifiers: ctrl };
+        let mut raw = egui::RawInput { events: vec![key(Key::Z), key(Key::C), egui::Event::ModifiersChanged(ctrl)], ..Default::default() };
+        ctrl_as_cmd(&mut raw);
+        match &raw.events[0] {
+            egui::Event::Key { modifiers, .. } => assert!(modifiers.command && modifiers.mac_cmd && !modifiers.ctrl),
+            e => panic!("{e:?}"),
+        }
+        assert!(matches!(raw.events[1], egui::Event::Copy));
+        assert!(matches!(raw.events[2], egui::Event::ModifiersChanged(m) if m.command));
+    }
 }

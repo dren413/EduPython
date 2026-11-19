@@ -48,13 +48,17 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   right-click a tab to rename or delete it, or to make it the main file (green triangle).
 - **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
-  *Run > Install pygame* installs pygame into the interpreter in use.
+  Click the Python version in the toolbar to see the interpreter and to install pygame into it.
 - **Booklet**: the exam reference booklet (PDF) in a side panel, with page jump, zoom
   (buttons, Ctrl + mouse wheel or trackpad pinch) and **search** (Ctrl+F; finds French words
-  without typing accents, and code such as `my_list[:]`).
+  without typing accents, and code such as `my_list[:]`). Text can be **selected and copied**
+  (drag, double-click a word, Ctrl+C or right-click > Copy) and pastes into code with its
+  indentation and plain `-`, `*` and `'` characters.
   It is installed by the school next to the program (see below), so a new booklet
   needs no new EduPython version.
-- The editor scrolls only vertically; long lines wrap.
+- The editor scrolls only vertically; long lines wrap. Ctrl + mouse wheel or trackpad pinch
+  changes the code size (also A− / A+ in the toolbar).
+- On a Mac, Ctrl works like ⌘ for all shortcuts (copy, paste, undo, save, …).
 - Light/dark mode and interface zoom (Ctrl +/−).
 
 ## School setup (IT): booklet and fixed Python
