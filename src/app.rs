@@ -1152,10 +1152,15 @@ impl EduPythonApp {
                 }
                 Dialog::About => {
                     ui.vertical_centered(|ui| {
+                        if let Some(logo) = &self.logo {
+                            ui.add(egui::Image::new((logo.id(), egui::vec2(72.0, 72.0))));
+                            ui.add_space(4.0);
+                        }
                         ui.heading("EduPython");
                         ui.label(format!("Version {VERSION} (native)"));
                         ui.add_space(6.0);
                         ui.label("Dren Gashi");
+                        ui.hyperlink_to("www.edupython.lu", "https://www.edupython.lu");
                         ui.hyperlink_to("github.com/dren413/EduPython", "https://github.com/dren413/EduPython");
                         ui.add_space(6.0);
                         ui.label(RichText::new("A Python editor for classes 2CB (code) and 1CB (classes, UML, pygame).").weak());

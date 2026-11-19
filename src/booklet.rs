@@ -58,6 +58,22 @@ enum Msg {
     Failed(String),
     Page { index: usize, width: u32, texture: Option<TextureHandle> },
     Text(Vec<PageText>),
+    Links(Vec<Vec<Link>>),
+}
+
+/// A clickable area on a page (page points, origin top-left).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Link {
+    rect: kurbo::Rect,
+    target: LinkTarget,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+enum LinkTarget {
+    /// Another place in the booklet: page and (optionally) the height on it.
+    Page(usize, Option<f64>),
+    /// A web or mail address.
+    Uri(String),
 }
 
 #[derive(Default)]
@@ -98,6 +114,8 @@ fn worker(path: PathBuf, ctx: egui::Context, queue: Shared, tx: Sender<Msg>) {
         return send(Msg::Failed("The PDF has no pages.".into()));
     }
     send(Msg::Loaded(sizes.clone()));
+    let links = std::panic::catch_unwind(AssertUnwindSafe(|| extract_links(&pdf))).unwrap_or_default();
+    send(Msg::Links(links));
 
     let settings = InterpreterSettings::default();
     let cache = RenderCache::new();
@@ -160,6 +178,137 @@ fn render_page<'a>(
     let image = ColorImage::from_rgba_premultiplied(size, pixmap.data_as_u8_slice());
     let options = TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..TextureOptions::LINEAR };
     Some(ctx.load_texture(format!("booklet_page_{index}"), image, options))
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Links (table of contents, cross references, web addresses)
+// ─────────────────────────────────────────────────────────────────────────────
+
+fn extract_links(pdf: &Pdf) -> Vec<Vec<Link>> {
+    use hayro::hayro_syntax::object::{Array, Dict, Name, String as PdfString};
+
+    let pages = pdf.pages();
+    let page_of: HashMap<_, usize> = pages.iter().enumerate().filter_map(|(i, p)| Some((p.raw().obj_id()?, i))).collect();
+    let catalog = pdf.xref().get::<Dict>(pdf.xref().root_id());
+    let to_page = |page: usize, x: f64, y: f64| -> Point {
+        let t = pages[page].initial_transform(true).to_kurbo();
+        t * Point::new(x, y)
+    };
+
+    // [page /XYZ left top zoom], [page /FitH top], [page /Fit], …
+    let explicit = |arr: &Array| -> Option<LinkTarget> {
+        let first = arr.raw_iter().next()?;
+        let page = match first {
+            hayro::hayro_syntax::object::MaybeRef::Ref(r) => *page_of.get(&r.into())?,
+            hayro::hayro_syntax::object::MaybeRef::NotRef(hayro::hayro_syntax::object::Object::Number(n)) => n.as_f64() as usize,
+            _ => return None,
+        };
+        let kind = match arr.raw_iter().nth(1) {
+            Some(hayro::hayro_syntax::object::MaybeRef::NotRef(hayro::hayro_syntax::object::Object::Name(n))) => n.as_str().to_string(),
+            _ => String::new(),
+        };
+        let nums: Vec<Option<f64>> = arr
+            .raw_iter()
+            .skip(2)
+            .map(|o| match o {
+                hayro::hayro_syntax::object::MaybeRef::NotRef(hayro::hayro_syntax::object::Object::Number(n)) => Some(n.as_f64()),
+                _ => None,
+            })
+            .collect();
+        let top = match kind.as_str() {
+            "XYZ" => nums.get(1).copied().flatten(),
+            "FitH" | "FitBH" => nums.first().copied().flatten(),
+            _ => None,
+        };
+        let y = top.map(|t| to_page(page, 0.0, t).y);
+        (page < pages.len()).then_some(LinkTarget::Page(page, y))
+    };
+
+    // named destinations: catalog /Dests (old style) and the /Names /Dests tree
+    fn tree_lookup<'a>(node: &Dict<'a>, key: &[u8], depth: u32) -> Option<hayro::hayro_syntax::object::Object<'a>> {
+        use hayro::hayro_syntax::object::{Array, Object, String as PdfString};
+        if depth > 32 {
+            return None;
+        }
+        if let Some(names) = node.get::<Array>(b"Names") {
+            let mut it = names.iter::<Object>();
+            while let (Some(k), Some(v)) = (it.next(), it.next()) {
+                if let Object::String(k) = k {
+                    if k.as_bytes() == key {
+                        return Some(v);
+                    }
+                }
+            }
+        }
+        if let Some(kids) = node.get::<Array>(b"Kids") {
+            for kid in kids.iter::<Dict>() {
+                if let Some(limits) = kid.get::<Array>(b"Limits") {
+                    let l: Vec<PdfString> = limits.iter::<PdfString>().collect();
+                    if l.len() == 2 && (key < l[0].as_bytes() || key > l[1].as_bytes()) {
+                        continue;
+                    }
+                }
+                if let Some(v) = tree_lookup(&kid, key, depth + 1) {
+                    return Some(v);
+                }
+            }
+        }
+        None
+    }
+    let named = |key: &[u8]| -> Option<LinkTarget> {
+        use hayro::hayro_syntax::object::Object;
+        let cat = catalog.as_ref()?;
+        let found = cat
+            .get::<Dict>(b"Names")
+            .and_then(|n| n.get::<Dict>(b"Dests"))
+            .and_then(|tree| tree_lookup(&tree, key, 0))
+            .or_else(|| cat.get::<Dict>(b"Dests").and_then(|d| d.get::<Object>(key)))?;
+        match found {
+            Object::Array(a) => explicit(&a),
+            Object::Dict(d) => d.get::<Array>(b"D").and_then(|a| explicit(&a)),
+            _ => None,
+        }
+    };
+    let dest = |holder: &Dict, key: &[u8]| -> Option<LinkTarget> {
+        if let Some(a) = holder.get::<Array>(key) {
+            return explicit(&a);
+        }
+        if let Some(s) = holder.get::<PdfString>(key) {
+            return named(s.as_bytes());
+        }
+        holder.get::<Name>(key).and_then(|n| named(n.as_ref()))
+    };
+
+    pages
+        .iter()
+        .enumerate()
+        .map(|(i, page)| {
+            let Some(annots) = page.raw().get::<Array>(b"Annots") else { return Vec::new() };
+            annots
+                .iter::<Dict>()
+                .filter(|a| a.get::<Name>(b"Subtype").is_some_and(|n| n.as_str() == "Link"))
+                .filter_map(|a| {
+                    let r: Vec<f64> = a.get::<Array>(b"Rect")?.iter::<f64>().collect();
+                    if r.len() != 4 {
+                        return None;
+                    }
+                    let (p0, p1) = (to_page(i, r[0], r[1]), to_page(i, r[2], r[3]));
+                    let rect = kurbo::Rect::from_points(p0, p1);
+                    let target = match a.get::<Dict>(b"A") {
+                        Some(action) => match action.get::<Name>(b"S").map(|n| n.as_str().to_string()).as_deref() {
+                            Some("GoTo") => dest(&action, b"D"),
+                            Some("URI") => action
+                                .get::<PdfString>(b"URI")
+                                .map(|u| LinkTarget::Uri(std::string::String::from_utf8_lossy(u.as_bytes()).into_owned())),
+                            _ => None,
+                        },
+                        None => dest(&a, b"Dest"),
+                    }?;
+                    Some(Link { rect, target })
+                })
+                .collect()
+        })
+        .collect()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -548,6 +697,9 @@ pub struct Booklet {
     /// (scaled) until the sharper one arrives.
     textures: HashMap<usize, (u32, TextureHandle)>,
     text: Option<Vec<PageText>>,
+    links: Vec<Vec<Link>>,
+    /// Jump to a page and height (page points) in the next frame.
+    goto_point: Option<(usize, f64)>,
     zoom: f32,
     /// Scroll target for the next frame.
     scroll_to: Option<Vec2>,
@@ -586,6 +738,8 @@ impl Booklet {
             worker: None,
             textures: HashMap::new(),
             text: None,
+            links: Vec::new(),
+            goto_point: None,
             zoom: 1.0,
             scroll_to: None,
             goto_page: Some(page),
@@ -627,6 +781,7 @@ impl Booklet {
                     self.textures.insert(index, (width, t));
                 }
                 Msg::Page { texture: None, .. } => {}
+                Msg::Links(l) => self.links = l,
                 Msg::Text(t) => {
                     self.text = Some(t);
                     if !self.query.is_empty() {
@@ -730,6 +885,10 @@ impl Booklet {
         if let Some(p) = self.goto_page.take() {
             self.scroll_to = Some(vec2(self.offset.x, tops[p.min(count - 1)] - MARGIN));
         }
+        if let Some((p, y)) = self.goto_point.take() {
+            let p = p.min(count - 1);
+            self.scroll_to = Some(vec2(self.offset.x, (tops[p] + y as f32 * pt_scale(p) - 12.0).max(0.0)));
+        }
         if std::mem::take(&mut self.pending_hit) {
             if let Some(hit) = self.hits.get(self.current_hit) {
                 let s = pt_scale(hit.page);
@@ -755,6 +914,8 @@ impl Booklet {
         let current_hit = self.current_hit;
         let textures = &self.textures;
         let text = self.text.as_deref();
+        let links = &self.links;
+        let mut follow: Option<LinkTarget> = None;
         let sel = &mut self.sel;
         let sel_fill = ui.visuals().selection.bg_fill.gamma_multiply(0.55);
         let mut copy_now: Option<String> = None;
@@ -766,6 +927,31 @@ impl Booklet {
             let (rect, resp) = ui.allocate_exact_size(total, Sense::click_and_drag());
             let origin = rect.min.to_vec2();
             area_id = Some(resp.id);
+
+            // ── links: a click (also Ctrl/Cmd + click) follows them ──
+            let link_at = |pos: egui::Pos2| -> Option<&Link> {
+                let p = pos - origin;
+                let i = (0..count).find(|&i| page_rect_of(i).contains(p))?;
+                let pr = page_rect_of(i);
+                let s = pt_scale(i);
+                let pt = Point::new(((p.x - pr.min.x) / s) as f64, ((p.y - pr.min.y) / s) as f64);
+                links.get(i)?.iter().find(|l| l.rect.inflate(1.0, 1.0).contains(pt))
+            };
+            let hovered_link = resp.hover_pos().and_then(link_at);
+            if let Some(l) = hovered_link {
+                ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
+                let tip = match &l.target {
+                    LinkTarget::Page(p, _) => format!("Go to page {}", p + 1),
+                    LinkTarget::Uri(u) => u.clone(),
+                };
+                egui::Tooltip::always_open(ui.ctx().clone(), ui.layer_id(), resp.id.with("link_tip"), egui::PopupAnchor::Pointer)
+                    .gap(12.0)
+                    .show(|ui| ui.label(tip));
+            }
+            let clicked_link = if resp.clicked() { resp.interact_pointer_pos().and_then(link_at).cloned() } else { None };
+            if let Some(l) = clicked_link {
+                follow = Some(l.target);
+            }
 
             // ── text selection: drag to select, double-click for a word ──
             if let Some(text) = text {
@@ -784,7 +970,7 @@ impl Booklet {
                     let pt = Point::new(((p.x - pr.min.x) / s) as f64, ((p.y - pr.min.y) / s) as f64);
                     (i, text.get(i).map_or(0, |t| caret_in(t, pt)))
                 };
-                if resp.hovered() {
+                if resp.hovered() && hovered_link.is_none() {
                     ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
                 }
                 if resp.drag_started() {
@@ -807,7 +993,7 @@ impl Booklet {
                         }
                     }
                     resp.request_focus();
-                } else if resp.clicked() {
+                } else if resp.clicked() && follow.is_none() {
                     *sel = None;
                     resp.request_focus();
                 }
@@ -885,6 +1071,11 @@ impl Booklet {
             }
         });
         self.area_id = area_id;
+        match follow {
+            Some(LinkTarget::Page(p, y)) => self.goto_point = Some((p, y.unwrap_or(0.0))),
+            Some(LinkTarget::Uri(u)) => ui.ctx().open_url(egui::OpenUrl::new_tab(u)),
+            None => {}
+        }
         if let Some(t) = copy_now {
             ui.ctx().copy_text(t);
         }
@@ -1063,6 +1254,13 @@ mod tests {
         assert!(!search(&text, "pour réagir aussi longtemps").is_empty(), "prose");
         assert!(!search(&text, "if event.type == MOUSEBUTTONUP").is_empty(), "start of code lines");
         assert!(!search(&text, "x ** 2 for x in").is_empty(), "math asterisk");
+
+        // table of contents links jump into the booklet
+        let links = extract_links(&pdf);
+        let toc: Vec<&Link> = links[2].iter().collect();
+        assert!(toc.len() > 5, "{toc:?}");
+        assert!(toc.iter().all(|l| matches!(l.target, LinkTarget::Page(p, Some(_)) if p > 2)), "{toc:?}");
+        assert!(links[1].iter().any(|l| l.target == LinkTarget::Uri("mailto:secretariat@script.lu".into())));
 
         // copying keeps case, accents, line breaks and code indentation
         let page20: String = text[20].copy.iter().map(|(c, _)| *c).collect();
