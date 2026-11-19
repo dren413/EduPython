@@ -87,7 +87,7 @@ fn shortcut(m: Modifiers, k: Key) -> KeyboardShortcut {
 }
 
 impl EduPythonApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, open_arg: Option<PathBuf>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, open_arg: Option<PathBuf>, config: Option<PathBuf>) -> Self {
         let settings = Settings::load();
         let ctx = &cc.egui_ctx;
         ctx.set_theme(if settings.dark { egui::Theme::Dark } else { egui::Theme::Light });
@@ -107,7 +107,7 @@ impl EduPythonApp {
             ctx.load_texture("edupython_logo", image, options)
         });
 
-        let school = SchoolConfig::load();
+        let school = SchoolConfig::load(config.as_deref());
         let booklet = school.booklet.clone().map(|p| Booklet::new(p, school.booklet_title.clone(), settings.booklet_page));
         let custom = if school.allow_change { settings.python_command.clone() } else { None };
         let python_rx = Some(python::detect_async(school.clone(), custom, ctx.clone()));
@@ -231,10 +231,14 @@ impl EduPythonApp {
                 self.allow_close = true;
             }
             Pending::NewProject => {
+                // The school's folder (ini `[projects] folder`) wins, so every
+                // new project starts in e.g. H:\Documents.
                 let location = self
-                    .project
+                    .school
+                    .projects_folder
                     .as_ref()
-                    .and_then(|p| p.dir.parent().map(|d| d.to_string_lossy().into_owned()))
+                    .map(|d| d.to_string_lossy().into_owned())
+                    .or_else(|| self.project.as_ref().and_then(|p| p.dir.parent().map(|d| d.to_string_lossy().into_owned())))
                     .or_else(|| dirs::document_dir().map(|d| d.to_string_lossy().into_owned()))
                     .unwrap_or_default();
                 self.dialog = Some(Dialog::NewProject {
@@ -245,7 +249,13 @@ impl EduPythonApp {
                 });
             }
             Pending::OpenProject(dir) => {
-                let dir = dir.or_else(|| rfd::FileDialog::new().set_title("Open a project folder").pick_folder());
+                let dir = dir.or_else(|| {
+                    let mut d = rfd::FileDialog::new().set_title("Open a project folder");
+                    if let Some(f) = self.school.projects_folder.as_ref().filter(|f| f.is_dir()) {
+                        d = d.set_directory(f);
+                    }
+                    d.pick_folder()
+                });
                 if let Some(dir) = dir {
                     self.open_project(&dir);
                 }
@@ -661,21 +671,23 @@ impl EduPythonApp {
                 }
             });
             ui.menu_button("Edit", |ui| {
-                let id = self.editor_id(self.active);
-                let (can_undo, can_redo) = match &self.project {
-                    Some(p) => p.files.get(self.active).map_or((false, false), |f| editor::can_undo_redo(&ctx, id, &f.text)),
-                    None => (false, false),
+                // No project open (start screen): nothing to undo. `editor_id`
+                // needs a project, so only ask for it when there is one.
+                let id = self.project.as_ref().and_then(|p| p.files.get(self.active)).map(|_| self.editor_id(self.active));
+                let (can_undo, can_redo) = match (&self.project, id) {
+                    (Some(p), Some(id)) => p.files.get(self.active).map_or((false, false), |f| editor::can_undo_redo(&ctx, id, &f.text)),
+                    _ => (false, false),
                 };
                 let undo = ui.add_enabled(can_undo, egui::Button::new("Undo").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND, Key::Z)))).clicked();
                 let redo = ui
                     .add_enabled(can_redo, egui::Button::new("Redo").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::Z))))
                     .clicked();
-                if undo || redo {
-                    if let Some(f) = self.project.as_mut().and_then(|p| p.files.get_mut(self.active)) {
-                        if editor::undo_redo(&ctx, id, &mut f.text, redo) {
-                            self.uml_stale = true;
-                        }
-                    }
+                if (undo || redo)
+                    && let Some(id) = id
+                    && let Some(f) = self.project.as_mut().and_then(|p| p.files.get_mut(self.active))
+                    && editor::undo_redo(&ctx, id, &mut f.text, redo)
+                {
+                    self.uml_stale = true;
                 }
             });
             ui.menu_button("View", |ui| {
@@ -787,7 +799,11 @@ impl EduPythonApp {
                         let click = if self.school.allow_change { "Click to change" } else { "Click for details" };
                         let resp = ui
                             .add(IconButton::new(Icon::Dot).text(text).icon_color(dot).frame(false))
-                            .on_hover_text(format!("{}\n({})\n{}\n{click}", info.exec.display(), info.source.label(), info.packages_summary()));
+                            .on_hover_text(if self.school.show_paths {
+                                format!("{}\n({})\n{}\n{click}", info.exec.display(), info.source.label(), info.packages_summary())
+                            } else {
+                                format!("Python {} ({})\n{}\n{click}", info.version, info.source.label(), info.packages_summary())
+                            });
                         if resp.clicked() {
                             let input = self.settings.python_command.clone().unwrap_or_else(|| info.exec.command.clone());
                             self.dialog = Some(Dialog::Python { input, error: String::new() });
@@ -983,7 +999,11 @@ impl EduPythonApp {
                     ui.horizontal(|ui| {
                         ui.add(egui::TextEdit::singleline(location).desired_width(280.0));
                         if ui.button("Choose…").clicked() {
-                            if let Some(d) = rfd::FileDialog::new().set_title("Where should the project be created?").pick_folder() {
+                            let mut picker = rfd::FileDialog::new().set_title("Where should the project be created?");
+                            if Path::new(location.trim()).is_dir() {
+                                picker = picker.set_directory(location.trim());
+                            }
+                            if let Some(d) = picker.pick_folder() {
                                 *location = d.to_string_lossy().into_owned();
                             }
                         }
@@ -1068,10 +1088,13 @@ impl EduPythonApp {
                     ui.heading("Python Interpreter");
                     let mut install = false;
                     if let Some(info) = &self.python {
+                        let show_paths = self.school.show_paths;
                         egui::Grid::new("pyinfo").num_columns(2).show(ui, |ui| {
-                            ui.label("In use:");
-                            ui.label(info.exec.display());
-                            ui.end_row();
+                            if show_paths {
+                                ui.label("In use:");
+                                ui.label(info.exec.display());
+                                ui.end_row();
+                            }
                             ui.label("Version:");
                             ui.label(format!("{} ({})", info.version, info.source.label()));
                             ui.end_row();
@@ -1086,12 +1109,12 @@ impl EduPythonApp {
                                 }
                                 ui.end_row();
                             }
-                            if !info.exec.extra_path.is_empty() {
+                            if show_paths && !info.exec.extra_path.is_empty() {
                                 ui.label("Package folders:");
                                 ui.label(info.exec.extra_path.iter().map(|p| p.display().to_string()).collect::<Vec<_>>().join("\n"));
                                 ui.end_row();
                             }
-                            if let Some(ini) = &self.school.source {
+                            if let Some(ini) = self.school.source.as_ref().filter(|_| show_paths) {
                                 ui.label("School settings:");
                                 ui.label(ini.display().to_string());
                                 ui.end_row();
