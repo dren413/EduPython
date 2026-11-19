@@ -16,7 +16,6 @@ pub struct Settings {
     /// Last page viewed in the booklet (0-based).
     pub booklet_page: usize,
     pub recent_projects: Vec<String>,
-    pub reopen_last_project: bool,
 }
 
 impl Default for Settings {
@@ -30,7 +29,6 @@ impl Default for Settings {
             show_booklet: false,
             booklet_page: 0,
             recent_projects: Vec::new(),
-            reopen_last_project: true,
         }
     }
 }

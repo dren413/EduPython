@@ -810,6 +810,7 @@ dependencies = [
 name = "edupython"
 version = "2.0.0"
 dependencies = [
+ "arboard",
  "dirs",
  "eframe",
  "hayro",

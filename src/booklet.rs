@@ -42,12 +42,15 @@ const PRELOAD: usize = 2;
 // Background worker
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Searchable text of one page: `chars[i]` (already normalised for searching)
-/// sits in `boxes[i]` (page points, origin top-left).
+/// Text of one page, in page points (origin top-left).
 #[derive(Default)]
 pub struct PageText {
+    /// For searching: `chars[i]` (lower-case, no accents) sits in `boxes[i]`.
     chars: Vec<char>,
     boxes: Vec<kurbo::Rect>,
+    /// For selecting and copying: the real characters (with case, accents,
+    /// line breaks and code indentation) and where they are.
+    copy: Vec<(char, kurbo::Rect)>,
 }
 
 enum Msg {
@@ -247,7 +250,22 @@ impl TextCollector {
             })
             .collect();
 
+        // Left edge of the text per font size, to rebuild code indentation.
+        let mut base_x: HashMap<i64, f64> = HashMap::new();
+        for (i, g) in self.glyphs.iter().enumerate() {
+            if i == 0 || !same_line(&self.glyphs[i - 1], g) {
+                let e = base_x.entry(size_key(g.size)).or_insert(g.x);
+                *e = e.min(g.x);
+            }
+        }
+
         let mut out = PageText::default();
+        let push_copy = |out: &mut PageText, c: char, r: kurbo::Rect| {
+            if c == ' ' && out.copy.last().is_none_or(|&(l, _)| l == ' ' || l == '\n') {
+                return;
+            }
+            out.copy.push((c, r));
+        };
         let push = |out: &mut PageText, c: char, r: kurbo::Rect| {
             if c == ' ' && out.chars.last().is_none_or(|&l| l == ' ') {
                 return;
@@ -261,15 +279,41 @@ impl TextCollector {
                 let p = &self.glyphs[i - 1];
                 let s = p.size.max(g.size);
                 let adv = g.x - p.x;
-                let space = if !same_line(p, g) || adv < -s * 3.0 {
+                let new_line = !same_line(p, g) || adv < -s * 3.0;
+                let space = if new_line {
                     true
                 } else {
                     let normal = step.get(&size_key(g.size)).filter(|_| size_key(p.size) == size_key(g.size));
                     g.left - p.right > s * 0.18 && normal.is_none_or(|n| adv > n * 1.6)
                 };
+                let gap = kurbo::Rect::new(p.right, line_box.y0, p.right, line_box.y1);
                 if space {
-                    push(&mut out, ' ', kurbo::Rect::new(p.right, line_box.y0, p.right, line_box.y1));
+                    push(&mut out, ' ', gap);
                 }
+                if new_line {
+                    while out.copy.last().is_some_and(|&(c, _)| c == ' ') {
+                        out.copy.pop();
+                    }
+                    out.copy.push(('\n', gap));
+                    // indentation of code lines (monospace: known step per character)
+                    let key = size_key(g.size);
+                    if let (Some(step), Some(base)) = (step.get(&key), base_x.get(&key)) {
+                        let n = ((g.x - base) / step).round() as usize;
+                        let at = kurbo::Rect::new(g.left, line_box.y0, g.left, line_box.y1);
+                        for _ in 0..n.min(40) {
+                            out.copy.push((' ', at));
+                        }
+                    }
+                } else if space {
+                    push_copy(&mut out, ' ', gap);
+                }
+            }
+            let originals: Vec<char> = g.text.chars().flat_map(copy_char).collect();
+            let m = originals.len().max(1) as f64;
+            let cw = line_box.width() / m;
+            for (k, c) in originals.into_iter().enumerate() {
+                let r = kurbo::Rect::new(line_box.x0 + cw * k as f64, line_box.y0, line_box.x0 + cw * (k as f64 + 1.0), line_box.y1);
+                push_copy(&mut out, c, r);
             }
             let chars: Vec<char> = g.text.chars().flat_map(normalize).collect();
             let n = chars.len().max(1) as f64;
@@ -298,40 +342,60 @@ fn extract_text(pdf: &Pdf) -> Vec<PageText> {
         .collect()
 }
 
-/// Lower-case, without accents, with typographic variants mapped to what
-/// pupils type (− → -, ’ → ', ﬁ → fi, …).
-fn normalize(c: char) -> Vec<char> {
+/// A character as it should be pasted into code: ligatures split up and
+/// typographic variants replaced by what Python expects (− → -, ’ → ', ∗ → *).
+/// Case and accents are kept.
+fn copy_char(c: char) -> Vec<char> {
     let lig = match c {
-        'ﬀ' => Some("ff"),
-        'ﬁ' => Some("fi"),
-        'ﬂ' => Some("fl"),
-        'ﬃ' => Some("ffi"),
-        'ﬄ' => Some("ffl"),
-        'ﬅ' | 'ﬆ' => Some("st"),
-        'œ' | 'Œ' => Some("oe"),
-        'æ' | 'Æ' => Some("ae"),
-        _ => None,
+        'ﬀ' => "ff",
+        'ﬁ' => "fi",
+        'ﬂ' => "fl",
+        'ﬃ' => "ffi",
+        'ﬄ' => "ffl",
+        'ﬅ' | 'ﬆ' => "st",
+        _ => "",
     };
-    if let Some(l) = lig {
-        return l.chars().collect();
+    if !lig.is_empty() {
+        return lig.chars().collect();
     }
-    let mapped = match c {
-        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' => 'a',
-        'ç' | 'Ç' => 'c',
-        'è' | 'é' | 'ê' | 'ë' | 'È' | 'É' | 'Ê' | 'Ë' => 'e',
-        'ì' | 'í' | 'î' | 'ï' | 'Ì' | 'Í' | 'Î' | 'Ï' => 'i',
-        'ñ' | 'Ñ' => 'n',
-        'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' => 'o',
-        'ù' | 'ú' | 'û' | 'ü' | 'Ù' | 'Ú' | 'Û' | 'Ü' => 'u',
-        'ý' | 'ÿ' | 'Ý' => 'y',
-        '’' | '‘' | '′' | '`' => '\'',
-        '“' | '”' | '«' | '»' => '"',
+    vec![match c {
+        '’' | '‘' | '′' => '\'',
+        '“' | '”' => '"',
         '−' | '–' | '—' | '‐' => '-',
-        '∗' | '×' => '*',
-        '\u{a0}' | '\u{2009}' | '\u{202f}' | '\t' | '\n' | '\r' => ' ',
+        '∗' => '*',
+        '\u{a0}' | '\u{2009}' | '\u{202f}' | '\t' => ' ',
         _ => c,
-    };
-    mapped.to_lowercase().collect()
+    }]
+}
+
+/// For searching: like [`copy_char`], plus lower-case and without accents.
+fn normalize(c: char) -> Vec<char> {
+    let mut out = Vec::new();
+    for c in copy_char(c) {
+        let folded = match c {
+            'œ' | 'Œ' => "oe",
+            'æ' | 'Æ' => "ae",
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' | 'À' | 'Á' | 'Â' | 'Ã' | 'Ä' | 'Å' => "a",
+            'ç' | 'Ç' => "c",
+            'è' | 'é' | 'ê' | 'ë' | 'È' | 'É' | 'Ê' | 'Ë' => "e",
+            'ì' | 'í' | 'î' | 'ï' | 'Ì' | 'Í' | 'Î' | 'Ï' => "i",
+            'ñ' | 'Ñ' => "n",
+            'ò' | 'ó' | 'ô' | 'õ' | 'ö' | 'Ò' | 'Ó' | 'Ô' | 'Õ' | 'Ö' => "o",
+            'ù' | 'ú' | 'û' | 'ü' | 'Ù' | 'Ú' | 'Û' | 'Ü' => "u",
+            'ý' | 'ÿ' | 'Ý' => "y",
+            '`' => "'",
+            '«' | '»' => "\"",
+            '×' => "*",
+            '\n' | '\r' => " ",
+            _ => "",
+        };
+        if folded.is_empty() {
+            out.extend(c.to_lowercase());
+        } else {
+            out.extend(folded.chars());
+        }
+    }
+    out
 }
 
 fn normalize_query(q: &str) -> Vec<char> {
@@ -386,6 +450,82 @@ pub fn search(pages: &[PageText], query: &str) -> Vec<Hit> {
     hits
 }
 
+/// Caret position (0..=len) in `t.copy` closest to `pt` (page points).
+fn caret_in(t: &PageText, pt: Point) -> usize {
+    let mut best: Option<(f64, f64, usize)> = None; // (vertical, horizontal distance, index)
+    for (i, &(c, r)) in t.copy.iter().enumerate() {
+        if c == '\n' {
+            continue;
+        }
+        let dy = if pt.y < r.y0 { r.y0 - pt.y } else if pt.y > r.y1 { pt.y - r.y1 } else { 0.0 };
+        let dx = if pt.x < r.x0 { r.x0 - pt.x } else if pt.x > r.x1 { pt.x - r.x1 } else { 0.0 };
+        if best.is_none_or(|(by, bx, _)| (dy, dx) < (by, bx)) {
+            best = Some((dy, dx, i));
+        }
+    }
+    match best {
+        Some((_, _, i)) => {
+            let r = t.copy[i].1;
+            if pt.x > (r.x0 + r.x1) / 2.0 { i + 1 } else { i }
+        }
+        None => 0,
+    }
+}
+
+/// The word (letters, digits, `_`) around caret `c`.
+fn word_around(t: &PageText, c: usize) -> (usize, usize) {
+    let is_word = |i: usize| t.copy.get(i).is_some_and(|(ch, _)| ch.is_alphanumeric() || *ch == '_');
+    let mut a = c.min(t.copy.len());
+    if !is_word(a) && a > 0 && is_word(a - 1) {
+        a -= 1;
+    }
+    if !is_word(a) {
+        return (a, (a + 1).min(t.copy.len()));
+    }
+    let mut b = a;
+    while a > 0 && is_word(a - 1) {
+        a -= 1;
+    }
+    while is_word(b) {
+        b += 1;
+    }
+    (a, b)
+}
+
+/// The text between two carets (any order, may span pages).
+fn selected_text(pages: &[PageText], a: (usize, usize), b: (usize, usize)) -> String {
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    let mut out = String::new();
+    for page in lo.0..=hi.0.min(pages.len().saturating_sub(1)) {
+        let t = &pages[page];
+        let from = if page == lo.0 { lo.1 } else { 0 }.min(t.copy.len());
+        let to = if page == hi.0 { hi.1 } else { t.copy.len() }.min(t.copy.len());
+        if page > lo.0 {
+            out.push('\n');
+        }
+        out.extend(t.copy[from.min(to)..to].iter().map(|(c, _)| *c));
+    }
+    // no trailing spaces on lines
+    out.lines().map(str::trim_end).collect::<Vec<_>>().join("\n")
+}
+
+/// Highlight boxes for a run of characters: one rectangle per line.
+fn line_rects(chars: &[(char, kurbo::Rect)]) -> Vec<kurbo::Rect> {
+    let mut rects: Vec<kurbo::Rect> = Vec::new();
+    for &(c, r) in chars {
+        if c == '\n' {
+            continue;
+        }
+        match rects.last_mut() {
+            Some(last) if (last.y0 - r.y0).abs() < 2.0 => *last = last.union(r),
+            _ if r.width() > 0.0 || c == ' ' => rects.push(r),
+            _ => {}
+        }
+    }
+    rects.retain(|r| r.width() > 0.0);
+    rects
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // The panel
 // ─────────────────────────────────────────────────────────────────────────────
@@ -421,6 +561,10 @@ pub struct Booklet {
     hits: Vec<Hit>,
     current_hit: usize,
     focus_search: bool,
+    /// Text selection: (anchor, head), each (page, caret index into `PageText::copy`).
+    sel: Option<((usize, usize), (usize, usize))>,
+    /// Id of the page area (it takes the keyboard focus for copying).
+    area_id: Option<egui::Id>,
 }
 
 impl Drop for Booklet {
@@ -452,6 +596,8 @@ impl Booklet {
             hits: Vec::new(),
             current_hit: 0,
             focus_search: false,
+            sel: None,
+            area_id: None,
         }
     }
 
@@ -550,7 +696,9 @@ impl Booklet {
         }
 
         // ── keyboard ──
-        if hovered && !ui.ctx().egui_wants_keyboard_input() {
+        let area_id = self.area_id;
+        let free_keys = ui.ctx().memory(|m| m.focused().is_none_or(|f| Some(f) == area_id));
+        if hovered && free_keys {
             let (up, down, home, end) = ui.input(|i| {
                 (i.key_pressed(Key::PageUp), i.key_pressed(Key::PageDown), i.key_pressed(Key::Home), i.key_pressed(Key::End))
             });
@@ -606,12 +754,86 @@ impl Booklet {
         let hits = &self.hits;
         let current_hit = self.current_hit;
         let textures = &self.textures;
+        let text = self.text.as_deref();
+        let sel = &mut self.sel;
+        let sel_fill = ui.visuals().selection.bg_fill.gamma_multiply(0.55);
+        let mut copy_now: Option<String> = None;
+        let mut area_id = None;
 
         let mut visible: Vec<usize> = Vec::new();
         let mut page_now = self.page;
         let out = area.show_viewport(ui, |ui, viewport| {
-            let (rect, _) = ui.allocate_exact_size(total, Sense::hover());
+            let (rect, resp) = ui.allocate_exact_size(total, Sense::click_and_drag());
             let origin = rect.min.to_vec2();
+            area_id = Some(resp.id);
+
+            // ── text selection: drag to select, double-click for a word ──
+            if let Some(text) = text {
+                // page + caret under a screen position (nearest page if between pages)
+                let caret_at = |pos: egui::Pos2| -> (usize, usize) {
+                    let p = pos - origin;
+                    let i = (0..count)
+                        .min_by(|&a, &b| {
+                            let da = page_rect_of(a).distance_to_pos(p);
+                            let db = page_rect_of(b).distance_to_pos(p);
+                            da.total_cmp(&db)
+                        })
+                        .unwrap_or(0);
+                    let pr = page_rect_of(i);
+                    let s = pt_scale(i);
+                    let pt = Point::new(((p.x - pr.min.x) / s) as f64, ((p.y - pr.min.y) / s) as f64);
+                    (i, text.get(i).map_or(0, |t| caret_in(t, pt)))
+                };
+                if resp.hovered() {
+                    ui.ctx().set_cursor_icon(egui::CursorIcon::Text);
+                }
+                if resp.drag_started() {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        let c = caret_at(pos);
+                        *sel = Some((c, c));
+                    }
+                    resp.request_focus();
+                } else if resp.dragged() {
+                    if let (Some(pos), Some((_, head))) = (resp.interact_pointer_pos(), sel.as_mut()) {
+                        *head = caret_at(pos);
+                    }
+                }
+                if resp.double_clicked() {
+                    if let Some(pos) = resp.interact_pointer_pos() {
+                        let (page, c) = caret_at(pos);
+                        if let Some(t) = text.get(page) {
+                            let (a, b) = word_around(t, c);
+                            *sel = Some(((page, a), (page, b)));
+                        }
+                    }
+                    resp.request_focus();
+                } else if resp.clicked() {
+                    *sel = None;
+                    resp.request_focus();
+                }
+                let has_sel = sel.is_some_and(|(a, b)| a != b);
+                if resp.has_focus() {
+                    let (copy, esc) = ui.input(|i| (i.events.iter().any(|e| matches!(e, egui::Event::Copy)), i.key_pressed(Key::Escape)));
+                    if copy && has_sel {
+                        copy_now = sel.map(|(a, b)| selected_text(text, a, b));
+                    }
+                    if esc {
+                        *sel = None;
+                    }
+                }
+                resp.context_menu(|ui| {
+                    if ui.add_enabled(has_sel, egui::Button::new("Copy").shortcut_text(ui.ctx().format_shortcut(&egui::KeyboardShortcut::new(egui::Modifiers::COMMAND, Key::C)))).clicked() {
+                        copy_now = sel.map(|(a, b)| selected_text(text, a, b));
+                        ui.close();
+                    }
+                    if ui.button("Select whole page").clicked() {
+                        let page = page_now.min(count - 1);
+                        *sel = Some(((page, 0), (page, text.get(page).map_or(0, |t| t.copy.len()))));
+                        ui.close();
+                    }
+                });
+            }
+
             let probe = viewport.min.y + viewport.height() * 0.3;
             page_now = tops.iter().rposition(|&t| t <= probe).unwrap_or(0);
             let painter = ui.painter();
@@ -645,8 +867,27 @@ impl Booklet {
                         painter.rect_filled(hr, 2.0, fill);
                     }
                 }
+                // selected text on this page
+                if let (Some((a, b)), Some(t)) = (*sel, text.and_then(|t| t.get(i))) {
+                    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+                    if lo.0 <= i && i <= hi.0 {
+                        let from = if lo.0 == i { lo.1 } else { 0 };
+                        let to = if hi.0 == i { hi.1 } else { t.copy.len() };
+                        for r in line_rects(&t.copy[from.min(to)..to.min(t.copy.len())]) {
+                            let sr = Rect::from_min_max(
+                                pr.min + vec2(r.x0 as f32 * s, r.y0 as f32 * s),
+                                pr.min + vec2(r.x1 as f32 * s, r.y1 as f32 * s),
+                            );
+                            painter.rect_filled(sr, 1.0, sel_fill);
+                        }
+                    }
+                }
             }
         });
+        self.area_id = area_id;
+        if let Some(t) = copy_now {
+            ui.ctx().copy_text(t);
+        }
         self.offset = out.state.clamped_offset();
         self.page = page_now;
 
@@ -822,6 +1063,20 @@ mod tests {
         assert!(!search(&text, "pour réagir aussi longtemps").is_empty(), "prose");
         assert!(!search(&text, "if event.type == MOUSEBUTTONUP").is_empty(), "start of code lines");
         assert!(!search(&text, "x ** 2 for x in").is_empty(), "math asterisk");
+
+        // copying keeps case, accents, line breaks and code indentation
+        let page20: String = text[20].copy.iter().map(|(c, _)| *c).collect();
+        assert!(page20.contains("if event.type == MOUSEBUTTONDOWN and event.button == 1:\n    <instruction(s)>"), "{page20}");
+        assert!(page20.contains("Pour réagir aussi longtemps"), "{page20}");
+        let page13: String = text[13].copy.iter().map(|(c, _)| *c).collect();
+        assert!(page13.contains("my_list = list(range(8, -4, -3))"), "{page13}");
+        assert!(page13.contains("first-level copy"), "{page13}");
+        // select a word, and copy across a range
+        let i = page13.find("deepcopy(my_list)").unwrap();
+        let ci = page13[..i].chars().count() + 2;
+        assert_eq!(word_around(&text[13], ci), (ci - 2, ci + 6));
+        let copied = selected_text(&text, (13, ci - 2), (13, ci + 15));
+        assert_eq!(copied, "deepcopy(my_list)");
     }
 
     /// Drives the real panel through egui frames: background loading,
