@@ -12,6 +12,9 @@ eframe = "0.37"
 # PDF rendering for the booklet (pure Rust). The booklet embeds its fonts,
 # so the built-in fallback fonts are left out to keep the app small.
 hayro = { version = "0.9", default-features = false }
+# Print / export the code as PDF.
+pdf-writer = "0.15"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 rfd = "0.17"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
@@ -24,6 +27,21 @@ bundled-python = ["dep:zip"]
 # macOS: Ctrl+V must paste like Cmd+V (same clipboard crate egui already uses).
 [target.'cfg(target_os = "macos")'.dependencies]
 arboard = { version = "3.7", default-features = false }
+# Print: the native macOS print dialog (PDFKit prints our PDF).
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString", "NSGeometry"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPrintOperation", "NSPrintInfo", "NSView", "NSResponder", "NSWindow", "NSApplication"] }
+objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "objc2-app-kit"] }
+
+# Print: the native Windows print dialog and GDI printing (like Word).
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_Storage_Xps",
+    "Win32_UI_Controls_Dialogs",
+    "Win32_UI_Input_KeyboardAndMouse",
+] }
 
 # Windows icon + file info; also works when cross-compiling from macOS (mingw windres).
 [build-dependencies]

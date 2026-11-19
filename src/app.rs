@@ -38,6 +38,8 @@ enum Dialog {
     RenameFile { idx: usize, name: String, error: String },
     ConfirmDeleteFile { idx: usize },
     Python { input: String, error: String },
+    /// Print (export = false) or export as PDF; `all` = every file of the project.
+    Print { export: bool, all: bool },
     About,
     Shortcuts,
     Unsaved(Pending),
@@ -564,6 +566,47 @@ impl EduPythonApp {
         }
     }
 
+    /// Print (open the PDF in the viewer) or export the code as a PDF.
+    /// The project is saved first, so the printout matches the files on disk.
+    fn print_pdf(&mut self, export: bool, all: bool) {
+        if !self.save() {
+            return;
+        }
+        let Some(p) = self.project.as_ref() else { return };
+        let mut order: Vec<usize> = if all { (0..p.files.len()).collect() } else { vec![self.active.min(p.files.len() - 1)] };
+        // The main file first, the others in tab order.
+        order.sort_by_key(|&i| p.files[i].name != p.main_file);
+        let files: Vec<crate::print::PrintFile> =
+            order.iter().map(|&i| crate::print::PrintFile { path: p.dir.join(&p.files[i].name), text: p.files[i].text.clone() }).collect();
+        let name = if all { p.name() } else { format!("{}_{}", p.name(), p.files[order[0]].name.trim_end_matches(".py")) };
+        let info = crate::print::PrintInfo::now();
+        if export {
+            let pdf = crate::print::make_pdf(&files, &info, &name);
+            let Some(path) = rfd::FileDialog::new()
+                .set_title("Export as PDF")
+                .add_filter("PDF", &["pdf"])
+                .set_directory(&p.dir)
+                .set_file_name(format!("{name}.pdf"))
+                .save_file()
+            else {
+                return;
+            };
+            match std::fs::write(&path, pdf) {
+                Ok(()) => self.info(format!("PDF saved to {}", path.display())),
+                Err(e) => self.error(format!("Could not save the PDF: {e}")),
+            }
+        } else {
+            // The system's own print dialog (printer, copies, …), like in Word.
+            match crate::print::print(&files, &info, &name) {
+                Ok(true) => {
+                    self.status = if cfg!(any(windows, target_os = "macos")) { "Sent to the printer" } else { "PDF opened. Print it with Ctrl+P." }.into()
+                }
+                Ok(false) => {}
+                Err(e) => self.error(e),
+            }
+        }
+    }
+
     fn export_svg(&mut self) {
         let Some(p) = self.project.as_ref() else { return };
         let svg = svg::export(&self.classes, &p.uml_positions);
@@ -601,6 +644,9 @@ impl EduPythonApp {
             if let Some(b) = self.booklet.as_mut() {
                 b.focus_search();
             }
+        }
+        if self.project.is_some() && pressed(shortcut(cmd, Key::P)) {
+            self.dialog = Some(Dialog::Print { export: false, all: true });
         }
         if self.project.is_some() && pressed(shortcut(cmd, Key::T)) {
             self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
@@ -650,10 +696,11 @@ impl EduPythonApp {
                 if ui.add_enabled(has_project, egui::Button::new("New File…").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND, Key::T)))).clicked() {
                     self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
                 }
-                if ui.add_enabled(has_project, egui::Button::new("Show Project Folder")).clicked() {
-                    if let Some(p) = &self.project {
-                        ctx.open_url(egui::OpenUrl::new_tab(format!("file://{}", p.dir.display())));
-                    }
+                if ui.add_enabled(has_project, egui::Button::new("Print…").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND, Key::P)))).clicked() {
+                    self.dialog = Some(Dialog::Print { export: false, all: true });
+                }
+                if ui.add_enabled(has_project, egui::Button::new("Export as PDF…")).clicked() {
+                    self.dialog = Some(Dialog::Print { export: true, all: true });
                 }
                 ui.separator();
                 if ui.button(if self.school.allow_change { "Python Interpreter…" } else { "Python Interpreter" }).clicked() {
@@ -778,13 +825,6 @@ impl EduPythonApp {
                     self.settings.save();
                 }
                 ui.separator();
-                if ui.button("A+").on_hover_text("Bigger code font").clicked() {
-                    self.settings.editor_font_size = (self.settings.editor_font_size + 1.0).min(40.0);
-                }
-                if ui.button("A−").on_hover_text("Smaller code font").clicked() {
-                    self.settings.editor_font_size = (self.settings.editor_font_size - 1.0).max(9.0);
-                }
-                ui.separator();
                 match &self.python {
                     None => {
                         ui.spinner();
@@ -901,15 +941,34 @@ impl EduPythonApp {
             return;
         }
         self.active = self.active.min(self.project.as_ref().unwrap().files.len() - 1);
-        ui.horizontal(|ui| {
-            let line = self.cursor_line;
-            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
-                if let Some(l) = line {
-                    ui.label(RichText::new(format!("Line {l}")).weak());
-                }
-                ui.with_layout(Layout::left_to_right(Align::Center), |ui| self.file_tabs(ui));
+        // Above the code: file tabs (left), line number and code size A− A+ (right).
+        // In a narrow editor the right part gets its own row, so tabs never sit under it.
+        let narrow = ui.available_width() < 380.0;
+        let right_part = |app: &mut Self, ui: &mut Ui| {
+            // Right to left: A+ is rightmost.
+            if ui.button("A+").on_hover_text("Bigger code font (Ctrl+Alt +)").clicked() {
+                app.settings.editor_font_size = (app.settings.editor_font_size + 1.0).min(40.0);
+            }
+            if ui.button("A−").on_hover_text("Smaller code font (Ctrl+Alt −)").clicked() {
+                app.settings.editor_font_size = (app.settings.editor_font_size - 1.0).max(9.0);
+            }
+            if let Some(l) = app.cursor_line {
+                ui.separator();
+                ui.label(RichText::new(format!("Line {l}")).weak());
+            }
+        };
+        if narrow {
+            ui.horizontal(|ui| ui.with_layout(Layout::right_to_left(Align::Center), |ui| right_part(self, ui)));
+            self.file_tabs(ui);
+        } else {
+            ui.horizontal(|ui| {
+                ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                    right_part(self, ui);
+                    ui.separator();
+                    ui.with_layout(Layout::left_to_right(Align::Center), |ui| self.file_tabs(ui));
+                });
             });
-        });
+        }
         let idx = self.active.min(self.project.as_ref().unwrap().files.len() - 1);
         self.active = idx;
         let id = self.editor_id(idx);
@@ -1084,6 +1143,22 @@ impl EduPythonApp {
                     }
                     keep &= !cancel;
                 }
+                Dialog::Print { export, all } => {
+                    ui.heading(if *export { "Export as PDF" } else { "Print" });
+                    ui.add_space(6.0);
+                    let current = self.project.as_ref().and_then(|p| p.files.get(self.active)).map(|f| f.name.clone()).unwrap_or_default();
+                    ui.radio_value(all, true, "All files of the project");
+                    ui.radio_value(all, false, format!("Only {current}"));
+                    ui.add_space(4.0);
+                    ui.label(RichText::new("Every page shows the full path of the file and your login name.").weak());
+                    let (ok, cancel) = ok_cancel(ui, if *export { "Export…" } else { "Print…" }, enter);
+                    if ok {
+                        let (export, all) = (*export, *all);
+                        self.print_pdf(export, all);
+                        keep = false;
+                    }
+                    keep &= !cancel;
+                }
                 Dialog::Python { input, error } => {
                     ui.heading("Python Interpreter");
                     let mut install = false;
@@ -1120,6 +1195,22 @@ impl EduPythonApp {
                                 ui.end_row();
                             }
                         });
+                        if !info.installed.is_empty() {
+                            ui.add_space(4.0);
+                            egui::CollapsingHeader::new(format!("Installed libraries ({})", info.installed.len()))
+                                .id_salt("pylibs")
+                                .show(ui, |ui| {
+                                    egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                                        egui::Grid::new("pylibs_grid").num_columns(2).striped(true).show(ui, |ui| {
+                                            for (name, version) in &info.installed {
+                                                ui.label(name);
+                                                ui.label(RichText::new(version).weak());
+                                                ui.end_row();
+                                            }
+                                        });
+                                    });
+                                });
+                        }
                         ui.separator();
                     }
                     if install {
@@ -1203,6 +1294,7 @@ impl EduPythonApp {
                             ("Ctrl+S", "Save"),
                             ("Ctrl+N / Ctrl+O", "New / open project"),
                             ("Ctrl+T", "New file"),
+                            ("Ctrl+P", "Print (as PDF, with file path and name)"),
                             ("Ctrl+F", "Search the booklet"),
                             ("Ctrl + mouse wheel / pinch", "Zoom the code or the booklet (under the mouse)"),
                             ("Ctrl+/", "Comment / uncomment lines"),

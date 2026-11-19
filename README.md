@@ -50,7 +50,12 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   right-click a tab to rename or delete it, or to make it the main file (green triangle).
 - **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
-  Click the Python version in the toolbar to see the interpreter and to install pygame into it.
+  Click the Python version in the toolbar to see the interpreter, all installed libraries with
+  their versions, and to install pygame into it.
+- **Print** (Ctrl+P) and **Export as PDF**: the whole project or one file, with colors and line
+  numbers. Every page shows the **full path of the file**, the login name and the date, so a
+  teacher knows whose printout it is. Windows and macOS use the system's own print dialog;
+  on Linux the PDF opens in the PDF viewer.
 - **Booklet**: the exam reference booklet (PDF) in a side panel, with clickable table of
   contents and links, page jump, zoom
   (buttons, Ctrl + mouse wheel or trackpad pinch) and **search** (Ctrl+F; finds French words
@@ -99,7 +104,8 @@ An update then only replaces `EduPython.exe`; the ini stays where it is.
 Relative paths in the ini (such as the booklet) are relative to the ini's folder.
 
 **Crashes.** If EduPython ever crashes, it shows a message and saves the details to
-`%LOCALAPPDATA%\EduPython\crash.log` (macOS: `~/Library/Application Support/EduPython/crash.log`).
+`%LOCALAPPDATA%\EduPython\crash.log` (macOS: `~/Library/Application Support/EduPython/crash.log`,
+Linux: `~/.local/share/EduPython/crash.log`).
 
 Without an ini, a file called `booklet.pdf` next to the program is shown as the booklet.
 Other places that are searched, in order: the file given with `--config`, the file in the environment variable
@@ -130,10 +136,13 @@ builds:
   and no Visual C++ runtime needed.
 - `EduPython-macos-arm64.dmg` / `EduPython-macos-x64.dmg`: the app can be started directly
   from the DMG, or dragged to Applications.
+- `EduPython-linux-x64.tar.gz`: unpack and start `EduPython/EduPython`; `./install.sh` adds it to
+  the app menu. Needs a 64-bit Linux desktop (Ubuntu 22.04 or newer, Debian 12, Fedora, …).
+  School settings can also go to `/etc/edupython/edupython.ini`.
 
-Both have **Python 3.12 + pygame built in**. On first start the built-in Python is unpacked
+All of them have **Python 3.12 + pygame built in**. On first start the built-in Python is unpacked
 once (a few seconds) into the user's local app-data folder
-(`%LOCALAPPDATA%\EduPython` / `~/Library/Application Support/EduPython`).
+(`%LOCALAPPDATA%\EduPython` / `~/Library/Application Support/EduPython` / `~/.local/share/EduPython`).
 Push a tag like `v2.0.0` to publish a release.
 
 To build one locally:

@@ -8,6 +8,7 @@ mod editor;
 mod highlight;
 mod icons;
 mod project;
+mod print;
 mod python;
 mod runtime;
 mod settings;
@@ -21,6 +22,8 @@ fn main() -> eframe::Result {
     let icon = eframe::icon_data::from_png_bytes(app::ICON_PNG).ok();
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("EduPython")
+        // Linux: matches StartupWMClass in the .desktop file (icon in the dock).
+        .with_app_id("edupython")
         .with_inner_size([1360.0, 860.0])
         .with_min_inner_size([800.0, 500.0]);
     if let Some(icon) = icon {
