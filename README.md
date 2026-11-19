@@ -83,9 +83,26 @@ Python reference.pdf    <- the booklet named in the ini
 - `packages = pygame, numpy`: checked at start; missing ones turn the toolbar dot orange.
 - `packages_path = ...`: extra package folders (added to `PYTHONPATH`).
 - `[booklet] file = ...` and `title = ...`: the booklet PDF (relative to the ini).
+- `[display] show_paths = no`: hides file and network paths (Python, package folders,
+  the ini) from pupils.
+- `[projects] folder = H:\Documents`: the folder offered for every new project and in
+  *Open Project* (pupils can still choose another one).
+
+**Ini kept elsewhere (e.g. on a network share).** Start EduPython with
+`--config <file>`, for example from a Start-menu shortcut:
+
+```
+Target:  \\server\apps\EduPython\EduPython.exe --config "\\server\config\edupython.ini"
+```
+
+An update then only replaces `EduPython.exe`; the ini stays where it is.
+Relative paths in the ini (such as the booklet) are relative to the ini's folder.
+
+**Crashes.** If EduPython ever crashes, it shows a message and saves the details to
+`%LOCALAPPDATA%\EduPython\crash.log` (macOS: `~/Library/Application Support/EduPython/crash.log`).
 
 Without an ini, a file called `booklet.pdf` next to the program is shown as the booklet.
-Other places that are searched, in order: the file in the environment variable
+Other places that are searched, in order: the file given with `--config`, the file in the environment variable
 `EDUPYTHON_CONFIG`, the folder next to `EduPython.app` (macOS),
 `%ProgramData%\EduPython` (Windows) and `/Library/Application Support/EduPython` (macOS).
 To update the booklet for a new school year, replace the PDF. Nothing else changes.

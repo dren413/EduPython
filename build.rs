@@ -7,7 +7,9 @@ fn main() {
     // on a Mac (x86_64-pc-windows-gnu) also gets its icon.
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
         let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/icon.ico");
+        // Absolute path: windres runs in OUT_DIR and would not find a relative one.
+        let icon = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("assets/icon.ico");
+        res.set_icon(&icon.to_string_lossy());
         res.set("ProductName", "EduPython");
         res.set("FileDescription", "EduPython");
         // Cross-compiling from macOS/Linux: use the MinGW tools (brew install mingw-w64).

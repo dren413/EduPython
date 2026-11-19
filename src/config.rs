@@ -1,6 +1,8 @@
 //! School configuration: an optional `edupython.ini` installed by IT.
 //!
 //! EduPython looks for it (first match wins) in:
+//! 0. the file given on the command line: `EduPython.exe --config <file>`
+//!    (handy in a Start-menu shortcut, so the ini can live anywhere)
 //! 1. the file named by the environment variable `EDUPYTHON_CONFIG`
 //! 2. the folder of the program (`EduPython.exe`)
 //! 3. macOS: the folder that contains `EduPython.app`, then `Contents/Resources`
@@ -37,6 +39,10 @@ pub struct SchoolConfig {
     pub booklet: Option<PathBuf>,
     /// Name shown for the booklet.
     pub booklet_title: String,
+    /// Show file paths (interpreter, package folders, the ini) to pupils.
+    pub show_paths: bool,
+    /// Folder offered for new projects and in "Open Project" (e.g. `H:\Documents`).
+    pub projects_folder: Option<PathBuf>,
 }
 
 impl Default for SchoolConfig {
@@ -51,16 +57,24 @@ impl Default for SchoolConfig {
             packages: vec!["pygame".into()],
             booklet: None,
             booklet_title: "Booklet".into(),
+            show_paths: true,
+            projects_folder: None,
         }
     }
 }
 
 impl SchoolConfig {
-    /// Find and load the configuration for this computer.
-    pub fn load() -> Self {
+    /// Find and load the configuration for this computer. `explicit` is the
+    /// ini given with `--config` on the command line (tried first).
+    pub fn load(explicit: Option<&Path>) -> Self {
         let dirs = search_dirs();
-        let env_ini = std::env::var_os("EDUPYTHON_CONFIG").map(PathBuf::from).filter(|p| p.is_file());
-        let ini = env_ini.or_else(|| dirs.iter().map(|d| d.join(INI_NAME)).find(|p| p.is_file()));
+        let explicit = explicit.map(|p| PathBuf::from(expand_vars(&p.to_string_lossy()))).map(|p| if p.is_dir() { p.join(INI_NAME) } else { p });
+        let env_ini = std::env::var_os("EDUPYTHON_CONFIG").map(PathBuf::from);
+        let ini = explicit
+            .into_iter()
+            .chain(env_ini)
+            .find(|p| p.is_file())
+            .or_else(|| dirs.iter().map(|d| d.join(INI_NAME)).find(|p| p.is_file()));
         let mut cfg = match &ini {
             Some(path) => match std::fs::read_to_string(path) {
                 Ok(text) => Self::parse(&text, path),
@@ -127,6 +141,8 @@ impl SchoolConfig {
                     cfg.booklet = p.is_file().then_some(p);
                 }
                 ("booklet", "title") if !value.is_empty() => cfg.booklet_title = value.to_string(),
+                ("display", "show_paths") => cfg.show_paths = parse_bool(value, cfg.show_paths),
+                ("projects", "folder") if !value.is_empty() => cfg.projects_folder = Some(resolve_path(value, &base)),
                 _ => {}
             }
         }
@@ -261,7 +277,13 @@ packages_path = libs ; "shared libs"
 [booklet]
 file = ref.pdf
 title = Python Reference 2.5.4
+[display]
+show_paths = no
+[projects]
+folder = "%EDUPYTHON_TEST_HOME%\Documents"
 "#;
+        // SAFETY: only this test reads this variable.
+        unsafe { std::env::set_var("EDUPYTHON_TEST_HOME", "H:") };
         let cfg = SchoolConfig::parse(text, &dir.join(INI_NAME));
         assert!(cfg.source.is_some());
         assert_eq!(cfg.python_paths, [dir.join("python/python.exe").to_string_lossy().into_owned(), "py".to_string()]);
@@ -272,11 +294,17 @@ title = Python Reference 2.5.4
         assert_eq!(cfg.packages_path, [dir.join("libs"), dir.join("shared libs")]);
         assert_eq!(cfg.booklet, Some(dir.join("ref.pdf")));
         assert_eq!(cfg.booklet_title, "Python Reference 2.5.4");
+        assert!(!cfg.show_paths);
+        // `H:\Documents` is absolute on Windows only; elsewhere it is joined to the ini folder.
+        let expected = if cfg!(windows) { PathBuf::from("H:\\Documents") } else { dir.join("H:\\Documents") };
+        assert_eq!(cfg.projects_folder, Some(expected));
 
         let cfg = SchoolConfig::parse("[python]\nallow_change = yes\n[booklet]\nfile = missing.pdf\n", &dir.join(INI_NAME));
         assert!(cfg.allow_change);
         assert_eq!(cfg.packages, ["pygame"]);
         assert_eq!(cfg.booklet, None);
+        assert!(cfg.show_paths);
+        assert_eq!(cfg.projects_folder, None);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
