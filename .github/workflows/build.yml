@@ -1,65 +1,85 @@
-name: Build Windows Release
+name: Build Pythonizer
+
+# Builds ready-to-run downloads with Python + pygame built in:
+#   Pythonizer-windows-x64.exe   (portable, no installer)
+#   Pythonizer-macos-arm64.dmg   (Apple Silicon)
+#   Pythonizer-macos-x64.dmg     (Intel Macs)
+# Push a tag like `v2.0.0` to publish them as a GitHub release.
 
 on:
   push:
-    branches:
-      - main
-    tags:
-      - 'v*'
+    tags: ['v2*']
+    branches: [main]
+    paths-ignore: ['old/**', '**.md']
   workflow_dispatch:
 
 permissions:
   contents: write
 
-concurrency:
-  group: windows-release-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
-  build-windows:
-    runs-on: windows-latest
-
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact: Pythonizer-windows-x64.exe
+          - os: macos-14
+            target: aarch64-apple-darwin
+            artifact: Pythonizer-macos-arm64.dmg
+          - os: macos-13
+            target: x86_64-apple-darwin
+            artifact: Pythonizer-macos-x64.dmg
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          node-version: 20
-          cache: npm
+          targets: ${{ matrix.target }}
 
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+      - uses: swatinem/rust-cache@v2
         with:
-          targets: x86_64-pc-windows-msvc
+          workspaces: . -> target
 
-      - name: Cache Rust build
-        uses: swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
         with:
-          workspaces: ./src-tauri -> target
+          python-version: '3.12'
 
-      - name: Install frontend dependencies
-        run: npm ci
-
-      - name: Build Windows NSIS installer
-        if: startsWith(github.ref, 'refs/heads/')
-        uses: tauri-apps/tauri-action@v0
+      - name: Prepare built-in Python with pygame
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          args: --target x86_64-pc-windows-msvc --bundles nsis
-          uploadWorkflowArtifacts: true
-          workflowArtifactNamePattern: pythonizer-[version]-[platform]-[arch]-[bundle]
+        run: python packaging/prepare_python.py ${{ matrix.target }} "$PWD/python-runtime.zip"
 
-      - name: Build and publish tagged release
+      - name: Test
+        run: cargo test --release --target ${{ matrix.target }}
+
+      - name: Build
+        run: |
+          export PYTHONIZER_PYTHON_ZIP="$PWD/python-runtime.zip"
+          cargo build --release --target ${{ matrix.target }} --features bundled-python
+          mkdir -p dist
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: cp target/${{ matrix.target }}/release/pythonizer.exe dist/${{ matrix.artifact }}
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: packaging/macos/make_dmg.sh target/${{ matrix.target }}/release/pythonizer dist/${{ matrix.artifact }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist/${{ matrix.artifact }}
+
+      - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Pythonizer ${{ github.ref_name }}
-          releaseBody: Windows NSIS installer release.
-          releaseDraft: false
-          prerelease: false
-          args: --target x86_64-pc-windows-msvc --bundles nsis
+          files: dist/${{ matrix.artifact }}
+          name: Pythonizer ${{ github.ref_name }}

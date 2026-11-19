@@ -5,8 +5,7 @@
 </p>
 
 <p align="center">
-  A visual <code>tkinter</code> builder designed for teaching.
-  Students can assemble a GUI, inspect the generated Python structure, and keep their application logic separate from the auto-generated UI code.
+  A native Python editor for school: write code, run it, and see your classes as a <b>UML class diagram</b>.
 </p>
 
 <p align="center">
@@ -17,110 +16,84 @@
 
 ---
 
-> **New: Pythonizer 2 (native).** A rewrite in Rust lives in [`rust/`](./rust/README.md).
-> It drops the tkinter designer and adds a live, **two-way UML class diagram**, a console
-> with `input()` support, and templates for 2CB (code) and 1CB (classes, pygame).
-> Downloads are a portable Windows `.exe` and a macOS `.dmg` with Python and pygame built in,
-> so there is nothing to install. The Tauri/React version described below is the previous version.
+Pythonizer was created from a teacher's perspective to fill a gap in teaching tools.
+Version 2 is a native rewrite in Rust. It drops the tkinter GUI designer and adds a live, two-way
+UML class diagram. There is no web view, no Node.js, and nothing to install for pupils.
 
-Pythonizer was created from a teacher perspective to fill a gap in pedagogical tools. It makes GUI building faster, but the point is not just speed. The goal is to help learners understand how a desktop interface maps to readable `tkinter` code.
+| Class | What they use |
+|-------|---------------|
+| **2CB** | Code only: editor + console (with `input()` support). Hide the UML panel. |
+| **1CB** | Classes and pygame, with a live, two-way UML diagram. |
 
-Instead of hiding the code behind a purely visual editor, Pythonizer keeps the generated interface structure visible and predictable. That makes it useful for classroom demos, beginner projects, and assignments where students should learn both GUI design and program structure.
+## Features
 
-## Why Pythonizer?
+- **Editor**: Python highlighting, line numbers, auto-indent after `:`, Tab/Shift+Tab
+  (also on several lines), Backspace removes a whole indent level, Ctrl+/ comments lines,
+  undo/redo, adjustable font size (good for projectors).
+- **Run** (F5) the main file or **run the open file** (Ctrl+F5). **Stop** with Shift+F5.
+  Files are saved automatically before running.
+- **Console**: output and errors, an **input field for `input()`**, clickable traceback lines.
+  The line with the error is shown in red in the editor.
+- **UML class diagram (left)**, built live from the code as you type:
+  - boxes with three parts: class name / attributes `x: int` / methods `move(p:(int,int))`
+  - types come from annotations or are guessed from values (`self.speed = (4, 3)` → `(int,int)`)
+  - class attributes are underlined; `extends Sprite` is shown for external base classes
+  - arrows for inheritance (between project classes) and associations (`self.balls: list[Ball]`)
+  - drag boxes, scroll/pinch to zoom, double-click to open the code, **Export SVG** for worksheets
+- **UML → code**: right-click in the diagram to add a **class** (optionally in its own file, with
+  the import added to `main.py`), **attributes** (optionally as constructor parameters),
+  **methods** with typed parameters and return types, or a **constructor**, or to **delete a method**.
+  You can type types in UML style (`(int,int)`); the code gets `tuple[int, int]`.
+- **Files (right)**: add, rename and delete files, and choose the main file (▶).
+- **Templates**: Script (2CB), Classes (1CB), Pygame (1CB), Empty.
+- **Python**: uses the built-in Python (release builds) or finds an installed one.
+  *Run ▸ Install pygame* installs pygame into the interpreter in use.
+- Light/dark mode and interface zoom (Ctrl +/−).
 
-- Build a `tkinter` interface visually with drag-and-drop components.
-- Keep generated UI code separate from the logic students actually edit.
-- Let learners inspect how widgets, layout, and events map into Python files.
-- Run projects quickly from inside the app.
-- Use a simpler, focused component set that is easier to teach.
+## Project format
 
-## What It Does
+A project is just a folder of `.py` files. `pythonizer.json` remembers the main file and
+the UML box positions. Any folder with Python files can be opened. Old tkinter projects
+also open; `gui.py` then appears as a normal file.
 
-Pythonizer currently focuses on a small, classroom-friendly widget set:
-
-- `Button`
-- `Label`
-- `Entry`
-- `Text`
-- `Listbox`
-- `Checkbutton`
-- `Radiobutton`
-- `Scale`
-- `Progressbar` — a ttk progress bar widget, useful for showing task completion or simple loading states
-- `PygameCanvas` — embeds a Pygame drawing surface inside a tkinter window, with a managed game loop and close handling, making it easy to teach game loops alongside standard GUI programming
-
-The app includes:
-
-- a design canvas for placing widgets
-- a properties panel for editing widget settings
-- code generation for `gui.py`
-- a separate `main.py` for application logic
-- support for additional Python files in the same project
-- built-in run support
-- light and dark themes
-- code editor zoom controls for teaching and projection use
-
-## Screenshot
-
-![Pythonizer workspace screenshot](./docs/pythonizer-screenshot.png)
-
-## How The Project Structure Works
-
-Pythonizer keeps the generated UI separate so students can focus on program logic:
-
-```text
-my_project/
-|- project.json   # widget layout and window settings
-|- gui.py         # fully auto-generated tkinter UI class
-`- main.py        # entry point for handlers and app logic
-```
-
-In practice, `main.py` is the file learners usually work in. `gui.py` is regenerated from the canvas, while `project.json` stores the editor state. Extra Python files can be added when a project grows.
-
-## Who It Is For
-
-- teachers introducing GUI programming with Python
-- students learning event-driven programming
-- beginners who benefit from seeing generated code instead of abstract builders
-- classrooms that need fast demos and small practice projects
-
-## Downloads
-
-Prebuilt desktop releases are published on GitHub:
-
-- Windows installer / executable: see [Releases](https://github.com/dren413/Pythonizer/releases)
-- macOS DMG: see [Releases](https://github.com/dren413/Pythonizer/releases)
-
-If a local Python interpreter is needed on a machine, Pythonizer can be pointed to it from inside the app.
-
-## Local Development
-
-Pythonizer now runs as a Tauri application with a React frontend.
-
-### Requirements
-
-- Node.js
-- Rust toolchain
-- a Python installation with `tkinter` available for running generated apps
-
-### Run In Development
+## Develop
 
 ```bash
-npm install
-npm run dev
+cargo run                 # debug build, uses an installed Python 3
+cargo run -- path/to/project
+cargo test                # parser, code generator, editor, console, runner tests
 ```
 
-### Build
+## Ready-to-run downloads (no installation for pupils)
+
+The `Build Pythonizer` GitHub workflow (`.github/workflows/build.yml`)
+builds:
+
+- `Pythonizer-windows-x64.exe`: a **single portable exe**. Double-click and it runs. No installer
+  and no Visual C++ runtime needed.
+- `Pythonizer-macos-arm64.dmg` / `Pythonizer-macos-x64.dmg`: the app can be started directly
+  from the DMG, or dragged to Applications.
+
+Both have **Python 3.12 + pygame built in**. On first start the built-in Python is unpacked
+once (a few seconds) into the user's local app-data folder
+(`%LOCALAPPDATA%\Pythonizer` / `~/Library/Application Support/Pythonizer`).
+Push a tag like `v2.0.0` to publish a release.
+
+To build one locally:
 
 ```bash
-npm run build
+python3 packaging/prepare_python.py aarch64-apple-darwin python-runtime.zip   # downloads Python, installs pygame
+PYTHONIZER_PYTHON_ZIP="$PWD/python-runtime.zip" cargo build --release --features bundled-python
+packaging/macos/make_dmg.sh target/release/pythonizer Pythonizer.dmg         # macOS only
 ```
 
-## Project Status
+Python builds come from [python-build-standalone](https://github.com/astral-sh/python-build-standalone).
 
-Pythonizer is actively evolving. The current focus is on a clean teaching workflow, reliable desktop packaging, and making the generated code easier for students to understand.
+**macOS note:** the DMG gets an ad-hoc signature only. On first launch pupils must
+right-click ▸ Open (or allow it in System Settings ▸ Privacy & Security). To avoid that, set
+`MACOS_SIGN_IDENTITY` to a Developer ID certificate and notarize the DMG.
 
-## License
+## Previous version
 
-No license file is currently included in this repository.
+The earlier Tauri/React version with the visual tkinter designer (v1.x) is kept in
+[`old/`](./old/README.md). Its GitHub workflows are in `old/.github/` and are no longer run.
