@@ -429,7 +429,8 @@ mod tests {
             }
             std::thread::sleep(Duration::from_millis(20));
         }
-        assert_eq!(out, "Name? Hi Bob é\n");
+        // Windows Python writes "\r\n"; the console strips "\r" the same way.
+        assert_eq!(out.replace("\r\n", "\n"), "Name? Hi Bob é\n");
         assert!(err.contains("ValueError: boom"), "{err}");
         assert!(err.contains("line 3"));
         assert_eq!(code, Some(Some(1)));
