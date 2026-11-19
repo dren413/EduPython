@@ -25,7 +25,8 @@ bundled-python = ["dep:zip"]
 [target.'cfg(target_os = "macos")'.dependencies]
 arboard = { version = "3.7", default-features = false }
 
-[target.'cfg(windows)'.build-dependencies]
+# Windows icon + file info; also works when cross-compiling from macOS (mingw windres).
+[build-dependencies]
 winresource = "0.1"
 
 # Optimise dependencies (PDF rendering, GUI) even in debug builds, so
