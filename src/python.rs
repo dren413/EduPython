@@ -93,6 +93,8 @@ pub struct PythonInfo {
     pub version: String,
     /// Packages to check (school config, default: pygame) and whether they are installed.
     pub packages: Vec<(String, bool)>,
+    /// Every installed library as (name, version), sorted by name.
+    pub installed: Vec<(String, String)>,
 }
 
 impl PythonInfo {
@@ -142,6 +144,30 @@ pub fn check_packages(exec: &PythonExec, packages: &[String]) -> Vec<(String, bo
             (p.clone(), ok)
         })
         .collect()
+}
+
+/// Tools pupils never import; left out of the list.
+const HIDDEN_LIBRARIES: [&str; 4] = ["pip", "setuptools", "wheel", "distribute"];
+
+/// All installed libraries (name, version), sorted by name, ignoring case.
+/// Includes the school's `packages_path` folders (they are on `PYTHONPATH`).
+pub fn list_installed(exec: &PythonExec) -> Vec<(String, String)> {
+    let script = "import importlib.metadata as m\nfor d in m.distributions():\n    try:\n        print(d.metadata['Name'] + '\\t' + (d.version or ''))\n    except Exception:\n        pass\n";
+    let Ok(out) = exec.command().arg("-c").arg(script).stdin(Stdio::null()).output() else { return Vec::new() };
+    parse_installed(&String::from_utf8_lossy(&out.stdout))
+}
+
+fn parse_installed(text: &str) -> Vec<(String, String)> {
+    let mut v: Vec<(String, String)> = text
+        .lines()
+        .filter_map(|l| l.split_once('\t'))
+        .map(|(n, ver)| (n.trim().to_string(), ver.trim().to_string()))
+        .filter(|(n, _)| !n.is_empty() && !HIDDEN_LIBRARIES.iter().any(|h| h.eq_ignore_ascii_case(n)))
+        .collect();
+    v.sort_by_key(|(n, _)| n.to_lowercase());
+    // The same library can be found twice (e.g. user and system site-packages): keep the first.
+    v.dedup_by(|a, b| a.0.eq_ignore_ascii_case(&b.0));
+    v
 }
 
 fn bundled_candidates() -> Vec<PythonExec> {
@@ -243,13 +269,15 @@ pub fn detect(cfg: &SchoolConfig, custom: Option<&str>) -> PythonInfo {
     match found {
         Some((exec, source, version)) => {
             let packages = check_packages(&exec, &cfg.packages);
-            PythonInfo { exec, source, version, packages }
+            let installed = list_installed(&exec);
+            PythonInfo { exec, source, version, packages, installed }
         }
         None => PythonInfo {
             exec: PythonExec::new(if cfg!(windows) { "python" } else { "python3" }),
             source: Source::NotFound,
             version: "—".into(),
             packages: cfg.packages.iter().map(|p| (p.clone(), false)).collect(),
+            installed: Vec::new(),
         },
     }
 }
@@ -460,6 +488,15 @@ mod tests {
     }
 
     #[test]
+    fn installed_list_is_sorted_and_clean() {
+        let text = "pygame\t2.6.1\nnumpy\t2.1.0\npip\t24.0\nNumPy\t1.0\nbroken line\nAttrs\t23.1\n";
+        assert_eq!(
+            parse_installed(text),
+            [("Attrs".to_string(), "23.1".to_string()), ("numpy".into(), "2.1.0".into()), ("pygame".into(), "2.6.1".into())]
+        );
+    }
+
+    #[test]
     fn school_paths_come_first_and_packages_are_checked() {
         let auto = detect(&SchoolConfig::default(), None);
         if auto.source == Source::NotFound {
@@ -476,6 +513,7 @@ mod tests {
         assert_eq!(info.source, Source::School);
         assert_eq!(info.packages, [("json".to_string(), true), ("no_such_module_xyz".to_string(), false)]);
         assert_eq!(info.missing(), ["no_such_module_xyz"]);
+        assert!(info.installed.iter().all(|(n, _)| n != "pip"), "pip is hidden");
 
         // Nothing from the ini works and searching is off → not found.
         let cfg = SchoolConfig { python_paths: vec!["/no/such/python".into()], ..cfg };

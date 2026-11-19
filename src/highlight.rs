@@ -213,6 +213,28 @@ fn skip_string(b: &[u8], mut i: usize) -> usize {
     n.min(b.len())
 }
 
+/// Colored spans for printing (light colors): (byte range, color, italic).
+pub fn print_spans(text: &str) -> Vec<(std::ops::Range<usize>, Color32, bool)> {
+    let p = palette(false);
+    tokenize(text)
+        .into_iter()
+        .map(|(s, e, tok)| {
+            let color = match tok {
+                Tok::Text => p.text,
+                Tok::Keyword => p.keyword,
+                Tok::Builtin => p.builtin,
+                Tok::Str => p.string,
+                Tok::Number => p.number,
+                Tok::Comment => p.comment,
+                Tok::DefName => p.def_name,
+                Tok::Decorator => p.decorator,
+                Tok::SelfKw => p.self_kw,
+            };
+            (s..e.min(text.len()), color, tok == Tok::Comment)
+        })
+        .collect()
+}
+
 /// Build a highlighted, non-wrapping layout job for the editor.
 pub fn highlight(text: &str, font: FontId, dark: bool) -> LayoutJob {
     let p = palette(dark);

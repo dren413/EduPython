@@ -4,6 +4,7 @@ name: Build EduPython
 #   EduPython-windows-x64.exe   (portable, no installer)
 #   EduPython-macos-arm64.dmg   (Apple Silicon)
 #   EduPython-macos-x64.dmg     (Intel Macs)
+#   EduPython-linux-x64.tar.gz  (64-bit Linux)
 # Push a tag like `v2.0.0` to publish them as a GitHub release.
 
 on:
@@ -31,6 +32,9 @@ jobs:
           - os: macos-15-intel   # macos-13 runners were retired
             target: x86_64-apple-darwin
             artifact: EduPython-macos-x64.dmg
+          - os: ubuntu-22.04     # older glibc, so the build runs on more distributions
+            target: x86_64-unknown-linux-gnu
+            artifact: EduPython-linux-x64.tar.gz
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -45,6 +49,12 @@ jobs:
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
+
+      - name: Linux build libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev libgl1-mesa-dev
 
       - uses: actions/setup-python@v5
         with:
@@ -67,6 +77,10 @@ jobs:
       - name: Package (Windows)
         if: runner.os == 'Windows'
         run: cp target/${{ matrix.target }}/release/edupython.exe dist/${{ matrix.artifact }}
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: packaging/linux/make_tarball.sh target/${{ matrix.target }}/release/edupython dist/${{ matrix.artifact }}
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
