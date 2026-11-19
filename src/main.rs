@@ -12,7 +12,7 @@ mod settings;
 mod uml;
 
 fn main() -> eframe::Result {
-    let icon = eframe::icon_data::from_png_bytes(include_bytes!("../assets/icon.png")).ok();
+    let icon = eframe::icon_data::from_png_bytes(app::ICON_PNG).ok();
     let mut viewport = eframe::egui::ViewportBuilder::default()
         .with_title("Pythonizer")
         .with_inner_size([1360.0, 860.0])

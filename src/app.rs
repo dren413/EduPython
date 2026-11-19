@@ -21,6 +21,9 @@ use crate::uml::view::{UmlAction, UmlView};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+/// The app icon (also used for the window / Dock icon in `main.rs`).
+pub const ICON_PNG: &[u8] = include_bytes!("../assets/icon.png");
+
 enum Pending {
     Close,
     NewProject,
@@ -70,6 +73,8 @@ pub struct PythonizerApp {
     status: String,
     /// Answer of the "unsaved changes" dialog (saved or discarded).
     dialog_result: Option<bool>,
+    /// App icon shown on the welcome screen.
+    logo: Option<egui::TextureHandle>,
 }
 
 fn shortcut(m: Modifiers, k: Key) -> KeyboardShortcut {
@@ -86,9 +91,16 @@ impl PythonizerApp {
             s.spacing.button_padding = egui::vec2(8.0, 4.0);
         });
 
+        let logo = eframe::icon_data::from_png_bytes(ICON_PNG).ok().map(|icon| {
+            let image = egui::ColorImage::from_rgba_unmultiplied([icon.width as usize, icon.height as usize], &icon.rgba);
+            let options = egui::TextureOptions { mipmap_mode: Some(egui::TextureFilter::Linear), ..egui::TextureOptions::LINEAR };
+            ctx.load_texture("pythonizer_logo", image, options)
+        });
+
         let python_rx = Some(python::detect_async(settings.python_command.clone(), ctx.clone()));
         let mut app = Self {
             settings,
+            logo,
             project: None,
             active: 0,
             python: None,
@@ -871,7 +883,11 @@ impl PythonizerApp {
 
     fn welcome(&mut self, ui: &mut Ui) {
         ui.vertical_centered(|ui| {
-            ui.add_space(ui.available_height() * 0.15);
+            ui.add_space(ui.available_height() * 0.12);
+            if let Some(logo) = &self.logo {
+                ui.add(egui::Image::new((logo.id(), egui::vec2(128.0, 128.0))));
+                ui.add_space(8.0);
+            }
             ui.label(RichText::new("Pythonizer").size(34.0).strong());
             ui.label(RichText::new("Write Python, run it, and see your classes as UML.").size(15.0).weak());
             ui.add_space(24.0);
