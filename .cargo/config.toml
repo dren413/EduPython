@@ -1,4 +1,4 @@
-# Link the C runtime statically on Windows so Pythonizer.exe runs on any PC
+# Link the C runtime statically on Windows so EduPython.exe runs on any PC
 # without installing the Visual C++ redistributable.
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]

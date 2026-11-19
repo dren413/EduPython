@@ -757,7 +757,7 @@ impl Booklet {
                 if ui.add_enabled(n > 0, egui::Button::new("Next")).on_hover_text("Next match (Enter)").clicked() {
                     step = 1;
                 }
-                if ui.small_button("x").on_hover_text("Clear search").clicked() {
+                if ui.add(crate::icons::IconButton::new(crate::icons::Icon::Trash).small()).on_hover_text("Clear search").clicked() {
                     self.query.clear();
                     self.hits.clear();
                 }
@@ -800,7 +800,7 @@ mod tests {
     /// Renders and searches the real booklet if it is available on this machine.
     #[test]
     fn real_booklet_if_present() {
-        let Some(path) = std::env::var_os("PYTHONIZER_TEST_BOOKLET").map(PathBuf::from) else { return };
+        let Some(path) = std::env::var_os("EDUPYTHON_TEST_BOOKLET").map(PathBuf::from) else { return };
         let pdf = Pdf::new(std::fs::read(path).unwrap()).unwrap();
         let ctx = egui::Context::default();
         let settings = InterpreterSettings::default();
@@ -828,7 +828,7 @@ mod tests {
     /// rendering, search and pinch zoom must all work without a window.
     #[test]
     fn panel_end_to_end_if_present() {
-        let Some(path) = std::env::var_os("PYTHONIZER_TEST_BOOKLET").map(PathBuf::from) else { return };
+        let Some(path) = std::env::var_os("EDUPYTHON_TEST_BOOKLET").map(PathBuf::from) else { return };
         let ctx = egui::Context::default();
         let mut b = Booklet::new(path, "Booklet".into(), 13);
         let screen = Rect::from_min_size(pos2(0.0, 0.0), vec2(600.0, 800.0));

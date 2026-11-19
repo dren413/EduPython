@@ -36,6 +36,11 @@ impl Default for Settings {
 }
 
 fn path() -> Option<PathBuf> {
+    Some(dirs::config_dir()?.join("EduPython").join("settings.json"))
+}
+
+/// Settings saved by the app under its old name (Pythonizer).
+fn legacy_path() -> Option<PathBuf> {
     Some(dirs::config_dir()?.join("Pythonizer").join("settings.json"))
 }
 
@@ -43,6 +48,7 @@ impl Settings {
     pub fn load() -> Self {
         path()
             .and_then(|p| std::fs::read_to_string(p).ok())
+            .or_else(|| legacy_path().and_then(|p| std::fs::read_to_string(p).ok()))
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
     }

@@ -2,10 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CFBundleName</key><string>Pythonizer</string>
-    <key>CFBundleDisplayName</key><string>Pythonizer</string>
-    <key>CFBundleIdentifier</key><string>com.dren413.pythonizer</string>
-    <key>CFBundleExecutable</key><string>pythonizer</string>
+    <key>CFBundleName</key><string>EduPython</string>
+    <key>CFBundleDisplayName</key><string>EduPython</string>
+    <key>CFBundleIdentifier</key><string>com.dren413.edupython</string>
+    <key>CFBundleExecutable</key><string>edupython</string>
     <key>CFBundleIconFile</key><string>icon.icns</string>
     <key>CFBundlePackageType</key><string>APPL</string>
     <key>CFBundleShortVersionString</key><string>VERSION</string>

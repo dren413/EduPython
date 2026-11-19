@@ -1,7 +1,7 @@
 //! Optional built-in Python runtime.
 //!
 //! When built with `--features bundled-python` and the environment variable
-//! `PYTHONIZER_PYTHON_ZIP` pointing to a zipped Python (with pygame), the zip
+//! `EDUPYTHON_PYTHON_ZIP` pointing to a zipped Python (with pygame), the zip
 //! is embedded into the executable. On first start it is unpacked once into
 //! the user's local data folder, so pupils need to install nothing.
 
@@ -13,9 +13,9 @@ use std::path::PathBuf;
 pub fn embedded_python() -> Option<PathBuf> {
     use std::io::Cursor;
 
-    static ZIP: &[u8] = include_bytes!(env!("PYTHONIZER_PYTHON_ZIP"));
+    static ZIP: &[u8] = include_bytes!(env!("EDUPYTHON_PYTHON_ZIP"));
 
-    let base = dirs::data_local_dir()?.join("Pythonizer");
+    let base = dirs::data_local_dir()?.join("EduPython");
     let dir = base.join(format!("python-{}-{}", env!("CARGO_PKG_VERSION"), ZIP.len()));
     let exe = if cfg!(windows) { dir.join("python.exe") } else { dir.join("bin").join("python3") };
     let marker = dir.join(".complete");

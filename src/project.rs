@@ -1,5 +1,5 @@
 //! A project is simply a folder of `.py` files plus an optional
-//! `pythonizer.json` that remembers the main file and the UML layout.
+//! `edupython.json` that remembers the main file and the UML layout.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -7,7 +7,9 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub const META_FILE: &str = "pythonizer.json";
+pub const META_FILE: &str = "edupython.json";
+/// Written by the app under its old name; still read so old projects keep their layout.
+const LEGACY_META_FILE: &str = "pythonizer.json";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Template {
@@ -167,6 +169,7 @@ impl Project {
             return Err(format!("'{}' is not a folder.", dir.display()));
         }
         let meta: Meta = fs::read_to_string(dir.join(META_FILE))
+            .or_else(|_| fs::read_to_string(dir.join(LEGACY_META_FILE)))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
@@ -297,7 +300,7 @@ mod tests {
 
     #[test]
     fn create_open_save() {
-        let tmp = std::env::temp_dir().join(format!("pythonizer-test-{}", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!("edupython-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
         let mut p = Project::create(&tmp, "Demo", Template::Classes).unwrap();
