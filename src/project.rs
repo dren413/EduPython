@@ -8,8 +8,6 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 
 pub const META_FILE: &str = "edupython.json";
-/// Written by the app under its old name; still read so old projects keep their layout.
-const LEGACY_META_FILE: &str = "pythonizer.json";
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Template {
@@ -169,7 +167,6 @@ impl Project {
             return Err(format!("'{}' is not a folder.", dir.display()));
         }
         let meta: Meta = fs::read_to_string(dir.join(META_FILE))
-            .or_else(|_| fs::read_to_string(dir.join(LEGACY_META_FILE)))
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default();
