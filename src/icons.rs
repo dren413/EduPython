@@ -14,7 +14,6 @@ pub enum Icon {
     Open,
     Save,
     Run,
-    RunFile,
     Stop,
     Sun,
     Moon,
@@ -59,18 +58,6 @@ pub fn paint(painter: &Painter, rect: Rect, icon: Icon, color: Color32) {
         Icon::Run => {
             painter.add(Shape::convex_polygon(
                 vec![p(0.24, 0.12), p(0.86, 0.50), p(0.24, 0.88)],
-                color,
-                Stroke::new(1.0, color),
-            ));
-        }
-        Icon::RunFile => {
-            painter.add(Shape::closed_line(
-                vec![p(0.16, 0.06), p(0.58, 0.06), p(0.80, 0.28), p(0.80, 0.94), p(0.16, 0.94)],
-                stroke,
-            ));
-            painter.add(Shape::line(vec![p(0.58, 0.06), p(0.58, 0.28), p(0.80, 0.28)], stroke));
-            painter.add(Shape::convex_polygon(
-                vec![p(0.36, 0.42), p(0.64, 0.61), p(0.36, 0.80)],
                 color,
                 Stroke::new(1.0, color),
             ));

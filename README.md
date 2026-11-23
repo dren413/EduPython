@@ -32,8 +32,8 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
 - **Editor**: Python highlighting, line numbers, auto-indent after `:`, Tab/Shift+Tab
   (also on several lines), Backspace removes a whole indent level, Ctrl+/ comments lines,
   undo/redo, adjustable font size (good for projectors).
-- **Run** (F5) the main file or **run the open file** (Ctrl+F5). **Stop** with Shift+F5.
-  Files are saved automatically before running.
+- **Run** (F5) runs the file that is open in the editor (no `if __name__ == "__main__":`
+  needed). **Stop** with Shift+F5. Files are saved automatically before running.
 - **Console**: output and errors, an **input field for `input()`**, clickable traceback lines.
   The line with the error is shown in red in the editor.
 - **UML class diagram (left)**, built live from the code as you type:
@@ -47,7 +47,7 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   **methods** with typed parameters and return types, or a **constructor**, or to **delete a method**.
   You can type types in UML style (`(int,int)`); the code gets `tuple[int, int]`.
 - **File tabs** above the editor: one tab per file (tabs cannot be closed). **+** adds a file;
-  right-click a tab to rename or delete it, or to make it the main file (green triangle).
+  right-click a tab to rename or delete it.
 - **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
   Click the Python version in the toolbar to see the interpreter, all installed libraries with
@@ -62,12 +62,13 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   without typing accents, and code such as `my_list[:]`). Text can be **selected and copied**
   (drag, double-click a word, Ctrl+C or right-click > Copy) and pastes into code with its
   indentation and plain `-`, `*` and `'` characters.
-  It is installed by the school next to the program (see below), so a new booklet
-  needs no new EduPython version.
+  A booklet (*Python reference.pdf*) is **built into EduPython** and copied to the user's
+  app-data folder on first start, so there is always one that works. A school can show
+  another one (see below), so a new booklet needs no new EduPython version.
 - The editor scrolls only vertically; long lines wrap. Ctrl + mouse wheel or trackpad pinch
   changes the code size (also A− / A+ in the toolbar).
 - On a Mac, Ctrl works like ⌘ for all shortcuts (copy, paste, undo, save, …).
-- Light/dark mode and interface zoom (Ctrl +/−).
+- Light mode (default) or dark mode, and interface zoom (Ctrl +/−).
 
 ## School setup (IT): booklet and fixed Python
 
@@ -93,14 +94,23 @@ Python reference.pdf    <- the booklet named in the ini
 - `[projects] folder = H:\Documents`: the folder offered for every new project and in
   *Open Project* (pupils can still choose another one).
 
-**Ini kept elsewhere (e.g. on a network share).** Start EduPython with
-`--config <file>`, for example from a Start-menu shortcut:
+**Ini or booklet kept elsewhere (e.g. on a network share).** Start EduPython with
+`--config <file>` and/or `--booklet <pdf>`, for example from a Start-menu shortcut:
 
 ```
-Target:  \\server\apps\EduPython\EduPython.exe --config "\\server\config\edupython.ini"
+Target:  \\server\apps\EduPython\EduPython.exe --config "\\server\config\edupython.ini" --booklet "\\server\config\Python reference.pdf"
 ```
 
-An update then only replaces `EduPython.exe`; the ini stays where it is.
+An update then only replaces `EduPython.exe`; the ini and the booklet stay where they are.
+The booklet shown is the first one found of: `--booklet`, the ini's `[booklet] file`
+(or a `booklet.pdf` next to the program), a PDF the pupil chose, and finally the built-in one
+(`%LOCALAPPDATA%\EduPython\booklet\Python reference.pdf`).
+
+**At home no ini is needed.** On first start EduPython creates its own `edupython.ini` with
+open defaults in the user's app-data folder (`%LOCALAPPDATA%\EduPython`,
+`~/Library/Application Support/EduPython`, `~/.local/share/EduPython`). It can be edited, and
+it is only used when no other ini is found: an ini next to the program, in the system folder,
+in `EDUPYTHON_CONFIG` or given with `--config` always wins.
 Relative paths in the ini (such as the booklet) are relative to the ini's folder.
 
 **Crashes.** If EduPython ever crashes, it shows a message and saves the details to
@@ -110,7 +120,8 @@ Linux: `~/.local/share/EduPython/crash.log`).
 Without an ini, a file called `booklet.pdf` next to the program is shown as the booklet.
 Other places that are searched, in order: the file given with `--config`, the file in the environment variable
 `EDUPYTHON_CONFIG`, the folder next to `EduPython.app` (macOS),
-`%ProgramData%\EduPython` (Windows) and `/Library/Application Support/EduPython` (macOS).
+`%ProgramData%\EduPython` (Windows), `/Library/Application Support/EduPython` (macOS),
+and last the user's own ini in the app-data folder.
 To update the booklet for a new school year, replace the PDF. Nothing else changes.
 
 ## Project format

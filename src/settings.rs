@@ -18,12 +18,14 @@ pub struct Settings {
     /// Last page viewed in the booklet (0-based).
     pub booklet_page: usize,
     pub recent_projects: Vec<String>,
+    /// A booklet PDF the pupil chose (used when the school installed none).
+    pub booklet_file: Option<String>,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            dark: true,
+            dark: false,
             editor_font_size: 15.0,
             ui_zoom: 1.0,
             python_command: None,
@@ -32,6 +34,7 @@ impl Default for Settings {
             uml_grid: true,
             booklet_page: 0,
             recent_projects: Vec::new(),
+            booklet_file: None,
         }
     }
 }

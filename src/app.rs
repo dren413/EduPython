@@ -89,7 +89,7 @@ fn shortcut(m: Modifiers, k: Key) -> KeyboardShortcut {
 }
 
 impl EduPythonApp {
-    pub fn new(cc: &eframe::CreationContext<'_>, open_arg: Option<PathBuf>, config: Option<PathBuf>) -> Self {
+    pub fn new(cc: &eframe::CreationContext<'_>, open_arg: Option<PathBuf>, config: Option<PathBuf>, booklet_arg: Option<PathBuf>) -> Self {
         let settings = Settings::load();
         let ctx = &cc.egui_ctx;
         ctx.set_theme(if settings.dark { egui::Theme::Dark } else { egui::Theme::Light });
@@ -110,7 +110,17 @@ impl EduPythonApp {
         });
 
         let school = SchoolConfig::load(config.as_deref());
-        let booklet = school.booklet.clone().map(|p| Booklet::new(p, school.booklet_title.clone(), settings.booklet_page));
+        // Which booklet: `--booklet <pdf>` (shortcut), then the school's (ini or
+        // booklet.pdf next to the program), then a PDF the pupil chose, and
+        // finally the one built into EduPython (copied to the app-data folder).
+        let booklet_arg = booklet_arg.map(|p| PathBuf::from(crate::config::expand_vars(&p.to_string_lossy()))).filter(|p| p.is_file());
+        let stem = |p: &PathBuf| p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+        let booklet = booklet_arg
+            .map(|p| (stem(&p), p))
+            .or_else(|| school.booklet.clone().map(|p| (school.booklet_title.clone(), p)))
+            .or_else(|| settings.booklet_file.as_ref().map(PathBuf::from).filter(|p| p.is_file()).map(|p| (stem(&p), p)))
+            .or_else(|| crate::runtime::bundled_booklet().map(|p| (crate::runtime::BUNDLED_BOOKLET_TITLE.to_string(), p)))
+            .map(|(t, p)| Booklet::new(p, t, settings.booklet_page));
         let custom = if school.allow_change { settings.python_command.clone() } else { None };
         let python_rx = Some(python::detect_async(school.clone(), custom, ctx.clone()));
         let mut app = Self {
@@ -309,7 +319,8 @@ impl EduPythonApp {
         }
     }
 
-    fn run(&mut self, ctx: &Context, current_file: bool) {
+    /// Run the file that is open in the editor.
+    fn run(&mut self, ctx: &Context) {
         if self.is_running() || self.project.is_none() {
             return;
         }
@@ -318,7 +329,7 @@ impl EduPythonApp {
         }
         let Some(info) = self.python_ready() else { return };
         let p = self.project.as_ref().unwrap();
-        let script = if current_file { p.files[self.active].name.clone() } else { p.main_file.clone() };
+        let script = p.files[self.active.min(p.files.len().saturating_sub(1))].name.clone();
         let dir = p.dir.clone();
         self.console.clear();
         self.stderr_buf.clear();
@@ -566,6 +577,46 @@ impl EduPythonApp {
         }
     }
 
+    /// Booklet panel when no booklet was found: where to put it, a download
+    /// link, and a button to choose the PDF.
+    fn missing_booklet(&mut self, ui: &mut Ui) {
+        ui.add_space(12.0);
+        ui.heading("Booklet not found");
+        ui.add_space(8.0);
+        ui.label("EduPython shows the booklet (a PDF) here, but it could not find it on this computer.");
+        ui.add_space(10.0);
+        ui.label(RichText::new("1. Download the booklet").strong());
+        if ui.button("Download Python reference.pdf").on_hover_text(crate::config::BOOKLET_URL).clicked() {
+            ui.ctx().open_url(egui::OpenUrl::new_tab(crate::config::BOOKLET_URL));
+        }
+        ui.add_space(10.0);
+        ui.label(RichText::new("2. Show it in EduPython").strong());
+        if ui.button("Choose the PDF…").clicked() {
+            let mut picker = rfd::FileDialog::new().set_title("Choose the booklet (PDF)").add_filter("PDF", &["pdf"]);
+            if let Some(d) = dirs::download_dir() {
+                picker = picker.set_directory(d);
+            }
+            if let Some(path) = picker.pick_file() {
+                self.settings.booklet_file = Some(path.to_string_lossy().into_owned());
+                self.settings.booklet_page = 0;
+                self.settings.save();
+                self.booklet = Some(Booklet::new(path, self.school.booklet_title.clone(), 0));
+            }
+        }
+        ui.label(RichText::new("EduPython remembers it for next time.").weak());
+        ui.add_space(10.0);
+        ui.label(RichText::new("Or put it next to EduPython").strong());
+        let folder = crate::config::program_folder().filter(|_| self.school.show_paths);
+        ui.label(match &folder {
+            Some(_) => format!("Name the file {} and put it in this folder:", crate::config::DEFAULT_BOOKLET),
+            None => format!("Name the file {} and put it in the same folder as EduPython.", crate::config::DEFAULT_BOOKLET),
+        });
+        if let Some(f) = folder {
+            ui.add(egui::Label::new(RichText::new(f.display().to_string()).monospace()).selectable(true));
+        }
+        ui.label(RichText::new("Then restart EduPython.").weak());
+    }
+
     /// Print (open the PDF in the viewer) or export the code as a PDF.
     /// The project is saved first, so the printout matches the files on disk.
     fn print_pdf(&mut self, export: bool, all: bool) {
@@ -654,11 +705,12 @@ impl EduPythonApp {
         if pressed(shortcut(Modifiers::SHIFT, Key::F5)) || pressed(shortcut(cmd | Modifiers::SHIFT, Key::Period)) {
             self.stop();
         }
-        if pressed(shortcut(cmd, Key::F5)) || pressed(shortcut(cmd | Modifiers::SHIFT, Key::R)) {
-            self.run(ctx, true);
-        }
-        if pressed(shortcut(Modifiers::NONE, Key::F5)) || pressed(shortcut(cmd, Key::R)) {
-            self.run(ctx, false);
+        // Ctrl+F5 / Ctrl+Shift+R used to mean "run this file"; Run now always does that.
+        if [shortcut(Modifiers::NONE, Key::F5), shortcut(cmd, Key::R), shortcut(cmd, Key::F5), shortcut(cmd | Modifiers::SHIFT, Key::R)]
+            .into_iter()
+            .any(|k| pressed(k))
+        {
+            self.run(ctx);
         }
         if pressed(shortcut(cmd | Modifiers::ALT, Key::Equals)) || pressed(shortcut(cmd | Modifiers::ALT, Key::Plus)) {
             self.settings.editor_font_size = (self.settings.editor_font_size + 1.0).min(40.0);
@@ -744,7 +796,7 @@ impl EduPythonApp {
                 }
                 if ui.checkbox(&mut self.settings.show_uml, "UML class diagram").changed()
                     || ui.add_enabled(self.settings.show_uml, egui::Checkbox::new(&mut self.settings.uml_grid, "UML grid")).changed()
-                    || ui.add_enabled(self.booklet.is_some(), egui::Checkbox::new(&mut self.settings.show_booklet, "Booklet")).changed()
+                    || ui.checkbox(&mut self.settings.show_booklet, "Booklet").changed()
                 {
                     self.settings.save();
                 }
@@ -784,13 +836,10 @@ impl EduPythonApp {
             ui.separator();
             let running = self.is_running();
             let has = self.project.is_some();
-            let main = self.project.as_ref().map(|p| p.main_file.clone()).unwrap_or_default();
+            let open = self.project.as_ref().and_then(|p| p.files.get(self.active)).map(|f| f.name.clone()).unwrap_or_default();
             let run_btn = IconButton::new(Icon::Run).text(RichText::new("Run").strong()).color(Color32::WHITE).fill(Color32::from_rgb(46, 160, 67));
-            if ui.add_enabled(has && !running, run_btn).on_hover_text(format!("Run {main} (F5)")).clicked() {
-                self.run(&ctx, false);
-            }
-            if ui.add_enabled(has && !running, IconButton::new(Icon::RunFile).text("Run this file")).on_hover_text("Run the file that is open in the editor").clicked() {
-                self.run(&ctx, true);
+            if ui.add_enabled(has && !running, run_btn).on_hover_text(format!("Run {open}, the file open in the editor (F5)")).clicked() {
+                self.run(&ctx);
             }
             let stop_btn = IconButton::new(Icon::Stop)
                 .text("Stop")
@@ -810,13 +859,9 @@ impl EduPythonApp {
                 }
                 let booklet_hint = match &self.booklet {
                     Some(b) => format!("Show the booklet ({})", b.title),
-                    None => format!(
-                        "No booklet installed.\nIT can put {} (or a edupython.ini) next to the EduPython program.",
-                        crate::config::DEFAULT_BOOKLET
-                    ),
+                    None => "No booklet found. Click to see how to get it.".to_string(),
                 };
-                let booklet_btn = ui.add_enabled(self.booklet.is_some(), egui::Button::selectable(self.settings.show_booklet && self.booklet.is_some(), "Booklet"));
-                if booklet_btn.on_hover_text(booklet_hint).on_disabled_hover_text("No booklet installed").clicked() {
+                if ui.add(egui::Button::selectable(self.settings.show_booklet, "Booklet")).on_hover_text(booklet_hint).clicked() {
                     self.settings.show_booklet = !self.settings.show_booklet;
                     self.settings.save();
                 }
@@ -858,21 +903,17 @@ impl EduPythonApp {
     /// only when it is deleted (right-click > Delete).
     fn file_tabs(&mut self, ui: &mut Ui) {
         let Some(p) = self.project.as_mut() else { return };
-        let mut set_main = None;
         let editor_bg = if self.settings.dark { Color32::from_rgb(40, 44, 52) } else { Color32::from_rgb(253, 253, 253) };
-        let green = Color32::from_rgb(46, 160, 67);
         let accent = ui.visuals().selection.stroke.color;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
             for (i, f) in p.files.iter().enumerate() {
-                let is_main = f.name == p.main_file;
                 let active = self.active == i;
                 let font = egui::TextStyle::Button.resolve(ui.style());
                 let text_color = if active { ui.visuals().strong_text_color() } else { ui.visuals().text_color() };
                 let galley = ui.painter().layout_no_wrap(f.name.clone(), font, text_color);
-                let icon_w = if is_main { 14.0 } else { 0.0 };
                 let dot_w = if f.is_dirty() { 12.0 } else { 0.0 };
-                let size = egui::vec2(galley.size().x + icon_w + dot_w + 20.0, ui.spacing().interact_size.y + 4.0);
+                let size = egui::vec2(galley.size().x + dot_w + 20.0, ui.spacing().interact_size.y + 4.0);
                 let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
                 if ui.is_rect_visible(rect) {
                     let painter = ui.painter();
@@ -889,33 +930,19 @@ impl EduPythonApp {
                         let top = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0));
                         painter.rect_filled(top, egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 }, accent);
                     }
-                    let mut x = rect.left() + 10.0;
-                    if is_main {
-                        let r = egui::Rect::from_min_size(egui::pos2(x, rect.center().y - 4.5), egui::Vec2::splat(9.0));
-                        crate::icons::paint(painter, r, Icon::Run, green);
-                        x += icon_w;
-                    }
-                    let pos = egui::pos2(x, rect.center().y - galley.size().y / 2.0);
+                    let pos = egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0);
                     let gw = galley.size().x;
                     painter.galley(pos, galley, text_color);
                     if f.is_dirty() {
                         painter.circle_filled(egui::pos2(pos.x + gw + 8.0, rect.center().y), 3.0, Color32::from_rgb(220, 160, 60));
                     }
                 }
-                let hover = match (is_main, f.is_dirty()) {
-                    (true, true) => "Main file, started with Run (F5). Not saved yet.\nRight-click: rename, delete",
-                    (true, false) => "Main file, started with Run (F5).\nRight-click: rename, delete",
-                    (false, true) => "Not saved yet.\nRight-click: set as main file, rename, delete",
-                    (false, false) => "Right-click: set as main file, rename, delete",
-                };
+                let hover = if f.is_dirty() { "Not saved yet.\nRight-click: rename, delete" } else { "Right-click: rename, delete" };
                 let resp = resp.on_hover_text(hover);
                 if resp.clicked() {
                     self.active = i;
                 }
                 resp.context_menu(|ui| {
-                    if ui.add_enabled(!is_main, egui::Button::new("Set as main file")).clicked() {
-                        set_main = Some(i);
-                    }
                     if ui.button("Rename…").clicked() {
                         self.dialog = Some(Dialog::RenameFile { idx: i, name: f.name.clone(), error: String::new() });
                     }
@@ -929,10 +956,6 @@ impl EduPythonApp {
                 self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
             }
         });
-        if let Some(i) = set_main {
-            p.set_main(i);
-            let _ = p.save_meta();
-        }
     }
 
     fn editor_area(&mut self, ui: &mut Ui) {
@@ -1288,8 +1311,7 @@ impl EduPythonApp {
                     ui.heading("Keyboard Shortcuts");
                     egui::Grid::new("keys").num_columns(2).striped(true).show(ui, |ui| {
                         for (k, v) in [
-                            ("F5  /  Ctrl+R", "Run main file"),
-                            ("Ctrl+F5  /  Ctrl+Shift+R", "Run the open file"),
+                            ("F5  /  Ctrl+R", "Run the open file"),
                             ("Shift+F5", "Stop"),
                             ("Ctrl+S", "Save"),
                             ("Ctrl+N / Ctrl+O", "New / open project"),
@@ -1607,6 +1629,8 @@ impl eframe::App for EduPythonApp {
         if self.settings.show_booklet {
             if let Some(b) = self.booklet.as_mut() {
                 egui::Panel::right("booklet").resizable(true).default_size(520.0).min_size(240.0).show(ui, |ui| b.show(ui));
+            } else {
+                egui::Panel::right("booklet").resizable(true).default_size(380.0).min_size(240.0).show(ui, |ui| self.missing_booklet(ui));
             }
         }
 

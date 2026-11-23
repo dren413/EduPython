@@ -45,3 +45,34 @@ pub fn embedded_python() -> Option<PathBuf> {
 pub fn embedded_python() -> Option<PathBuf> {
     None
 }
+
+/// File name of the built-in booklet (as pupils see it in the app-data folder).
+pub const BUNDLED_BOOKLET_NAME: &str = "Python reference.pdf";
+/// Title shown for the built-in booklet.
+pub const BUNDLED_BOOKLET_TITLE: &str = "Python Reference Guide";
+
+/// The booklet that ships inside EduPython, so there is always one that works.
+/// It is copied once (and again after an update that changes it) to
+/// `%LOCALAPPDATA%\EduPython\booklet\` (macOS: `~/Library/Application Support/EduPython/booklet/`,
+/// Linux: `~/.local/share/EduPython/booklet/`). Returns its path.
+pub fn bundled_booklet() -> Option<PathBuf> {
+    static PDF: &[u8] = include_bytes!("../assets/Python reference.pdf");
+
+    let dir = dirs::data_local_dir()?.join("EduPython").join("booklet");
+    let path = dir.join(BUNDLED_BOOKLET_NAME);
+    let up_to_date = std::fs::read(&path).is_ok_and(|b| b == PDF);
+    if !up_to_date {
+        std::fs::create_dir_all(&dir).ok()?;
+        // Write to a temporary file first, so a half-written PDF is never shown.
+        let tmp = dir.join(format!(".booklet-{}.tmp", std::process::id()));
+        std::fs::write(&tmp, PDF).ok()?;
+        if std::fs::rename(&tmp, &path).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+            // Another EduPython may hold the file open (Windows); use it if it is complete.
+            if !std::fs::read(&path).is_ok_and(|b| b == PDF) {
+                return None;
+            }
+        }
+    }
+    Some(path)
+}

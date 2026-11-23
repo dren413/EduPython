@@ -8,6 +8,11 @@
 //! 3. macOS: the folder that contains `EduPython.app`, then `Contents/Resources`
 //! 4. a system folder: `%ProgramData%\EduPython` (Windows) or
 //!    `/Library/Application Support/EduPython` (macOS)
+//! 5. the user's own ini in the app-data folder (`%LOCALAPPDATA%\EduPython`,
+//!    `~/Library/Application Support/EduPython`, `~/.local/share/EduPython`).
+//!    EduPython creates it on first start with open defaults (pupils may pick
+//!    Python and install packages), so at home no ini has to be set up, and
+//!    any school ini above overrides it.
 //!
 //! Relative paths inside the ini are relative to the ini's own folder, and
 //! `%VAR%` / `$VAR` / `~` are expanded. See `packaging/edupython.example.ini`.
@@ -18,6 +23,8 @@ use std::path::{Path, PathBuf};
 
 pub const INI_NAME: &str = "edupython.ini";
 pub const DEFAULT_BOOKLET: &str = "booklet.pdf";
+/// Where pupils can download the booklet when none is installed.
+pub const BOOKLET_URL: &str = "https://edupython.lu/Python%20reference.pdf";
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SchoolConfig {
@@ -67,6 +74,7 @@ impl SchoolConfig {
     /// Find and load the configuration for this computer. `explicit` is the
     /// ini given with `--config` on the command line (tried first).
     pub fn load(explicit: Option<&Path>) -> Self {
+        ensure_user_ini();
         let dirs = search_dirs();
         let explicit = explicit.map(|p| PathBuf::from(expand_vars(&p.to_string_lossy()))).map(|p| if p.is_dir() { p.join(INI_NAME) } else { p });
         let env_ini = std::env::var_os("EDUPYTHON_CONFIG").map(PathBuf::from);
@@ -229,6 +237,59 @@ fn resolve_command(value: &str, base: &Path) -> String {
     }
 }
 
+/// The folder to suggest for `booklet.pdf`: next to `EduPython.exe`
+/// (Windows, Linux) or next to `EduPython.app` (macOS).
+pub fn program_folder() -> Option<PathBuf> {
+    let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
+    if cfg!(target_os = "macos") && dir.ends_with("Contents/MacOS") {
+        return dir.parent()?.parent()?.parent().map(Path::to_path_buf);
+    }
+    Some(dir)
+}
+
+/// The user's own ini (lowest priority), in the local app-data folder.
+pub fn user_dir() -> Option<PathBuf> {
+    Some(dirs::data_local_dir()?.join("EduPython"))
+}
+
+/// Settings in the user's own ini, written on first start. Every value is the
+/// open default, so it behaves exactly like having no ini at all.
+const USER_INI: &str = r#"; EduPython settings for this user (created automatically).
+;
+; This file is used only when there is no other edupython.ini: one next to
+; EduPython, in the system folder, or given with  --config <file>  wins.
+; Edit it to change the defaults at home. Lines starting with ; are comments.
+; All options: https://github.com/dren413/EduPython#school-setup-it-booklet-and-fixed-python
+
+[python]
+; Python interpreters to try first (one "path =" per line), e.g.
+; path = C:\Python313\python.exe
+fallback_search = yes
+allow_change = yes
+allow_install = yes
+packages = pygame
+
+[booklet]
+; Leave empty to use the booklet built into EduPython.
+; file = C:\Users\me\Documents\Python reference.pdf
+; title = Python Reference Guide
+
+[display]
+show_paths = yes
+
+[projects]
+; folder = ~/Documents
+"#;
+
+/// Create the user's ini with the open defaults if it does not exist yet.
+fn ensure_user_ini() {
+    let Some(dir) = user_dir() else { return };
+    let path = dir.join(INI_NAME);
+    if !path.exists() && std::fs::create_dir_all(&dir).is_ok() {
+        let _ = std::fs::write(path, USER_INI);
+    }
+}
+
 /// Folders searched for the ini and the default booklet, most specific first.
 fn search_dirs() -> Vec<PathBuf> {
     let mut v = Vec::new();
@@ -253,6 +314,7 @@ fn search_dirs() -> Vec<PathBuf> {
     } else {
         v.push(PathBuf::from("/etc/edupython"));
     }
+    v.extend(user_dir());
     v
 }
 
@@ -306,6 +368,12 @@ folder = "%EDUPYTHON_TEST_HOME%\Documents"
         assert!(cfg.show_paths);
         assert_eq!(cfg.projects_folder, None);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn user_ini_is_open() {
+        let cfg = SchoolConfig::parse(USER_INI, Path::new("/x/edupython.ini"));
+        assert_eq!(SchoolConfig { source: None, ..cfg }, SchoolConfig::default(), "the user ini must behave like no ini");
     }
 
     #[test]

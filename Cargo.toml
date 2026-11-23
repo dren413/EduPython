@@ -1,6 +1,6 @@
 [package]
 name = "edupython"
-version = "2.0.1"
+version = "2.0.2"
 edition = "2024"
 description = "A native Python editor for school: code, run, and see your classes as UML"
 authors = ["Dren Gashi"]

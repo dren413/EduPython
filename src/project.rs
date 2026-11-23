@@ -284,11 +284,6 @@ impl Project {
         }
         Ok(())
     }
-
-    pub fn set_main(&mut self, idx: usize) {
-        self.main_file = self.files[idx].name.clone();
-        self.meta_dirty = true;
-    }
 }
 
 #[cfg(test)]
