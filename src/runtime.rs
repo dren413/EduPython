@@ -55,7 +55,28 @@ pub const BUNDLED_BOOKLET_TITLE: &str = "Python Reference Guide";
 /// (macOS: `~/Library/Application Support/EduPython/booklet/`,
 /// Linux: `~/.local/share/EduPython/booklet/`).
 fn booklet_cache() -> Option<PathBuf> {
-    Some(dirs::data_local_dir()?.join("EduPython").join("booklet").join(BUNDLED_BOOKLET_NAME))
+    Some(booklet_dir()?.join(BUNDLED_BOOKLET_NAME))
+}
+
+/// Folder that holds the downloaded booklet and PDFs the pupil added.
+pub fn booklet_dir() -> Option<PathBuf> {
+    Some(dirs::data_local_dir()?.join("EduPython").join("booklet"))
+}
+
+/// Copy a PDF the pupil chose (or dropped on the booklet panel) into the
+/// app-data folder, so it keeps working when the original is moved or deleted.
+pub fn adopt_booklet(src: &std::path::Path) -> Result<PathBuf, String> {
+    if !is_pdf(src) {
+        return Err("This file is not a PDF.".into());
+    }
+    let dir = booklet_dir().ok_or("No app-data folder")?;
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let name = src.file_name().ok_or("No file name")?;
+    let dest = dir.join(name);
+    if src != dest {
+        std::fs::copy(src, &dest).map_err(|e| e.to_string())?;
+    }
+    Ok(dest)
 }
 
 fn is_pdf(path: &std::path::Path) -> bool {
@@ -85,17 +106,20 @@ pub fn download_booklet(ctx: eframe::egui::Context) -> std::sync::mpsc::Receiver
             let dir = path.parent().ok_or("No app-data folder")?;
             std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
             let tmp = dir.join(format!(".download-{}.tmp", std::process::id()));
-            let mut cmd = std::process::Command::new("curl");
-            cmd.args(["-fsSL", "--retry", "2", "--max-time", "120", "-o"]).arg(&tmp).arg(crate::config::BOOKLET_URL);
-            crate::python::hide_window(&mut cmd);
-            let out = cmd.output().map_err(|e| format!("Could not start the download: {e}"))?;
-            if !out.status.success() || !is_pdf(&tmp) {
+            // The main site first, then the mirror.
+            for url in crate::config::BOOKLET_URLS {
+                let mut cmd = std::process::Command::new("curl");
+                cmd.args(["-fsSL", "--retry", "1", "--connect-timeout", "15", "--max-time", "120", "-o"]).arg(&tmp).arg(url);
+                crate::python::hide_window(&mut cmd);
+                let Ok(out) = cmd.output() else { break };
+                if out.status.success() && is_pdf(&tmp) {
+                    std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+                    return Ok(path);
+                }
                 let _ = std::fs::remove_file(&tmp);
-                let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
-                return Err(if msg.is_empty() { "The download failed. Is the computer online?".to_string() } else { msg });
             }
-            std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-            Ok(path)
+            // curl's own messages mean little to pupils.
+            Err("Could not download it. Is the computer online?".to_string())
         })();
         let _ = tx.send(result);
         ctx.request_repaint();

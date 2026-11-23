@@ -25,6 +25,8 @@ pub const INI_NAME: &str = "edupython.ini";
 pub const DEFAULT_BOOKLET: &str = "booklet.pdf";
 /// Where pupils can download the booklet when none is installed.
 pub const BOOKLET_URL: &str = "https://edupython.lu/Python%20reference.pdf";
+/// Tried in this order when EduPython downloads the booklet itself.
+pub const BOOKLET_URLS: [&str; 2] = [BOOKLET_URL, "https://www.gashi.lu/edupython/Python%20reference.pdf"];
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SchoolConfig {

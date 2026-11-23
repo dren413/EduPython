@@ -65,8 +65,10 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   (drag, double-click a word, Ctrl+C or right-click > Copy) and pastes into code with its
   indentation and plain `-`, `*` and `'` characters.
   If no booklet is installed, EduPython **downloads *Python reference.pdf* once** from
-  edupython.lu into the user's app-data folder, so there is always one that works (also offline
-  afterwards). A school can show
+  edupython.lu (mirror: gashi.lu) into the user's app-data folder, so there is always one that
+  works (also offline afterwards). Without internet, the booklet panel explains what to do:
+  **drag the PDF onto it** or choose it, and EduPython keeps a copy. A folded *For IT* part there
+  shows the three ways to install it for all users. A school can show
   another one (see below), so a new booklet needs no new EduPython version.
 - The editor scrolls only vertically; long lines wrap. Ctrl + mouse wheel or trackpad pinch
   changes the code size (also A− / A+ in the toolbar).

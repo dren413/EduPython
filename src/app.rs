@@ -585,59 +585,106 @@ impl EduPythonApp {
         }
     }
 
-    /// Booklet panel when no booklet was found: where to put it, a download
-    /// link, and a button to choose the PDF.
-    fn missing_booklet(&mut self, ui: &mut Ui) {
-        ui.add_space(12.0);
-        ui.heading("Booklet not found");
-        ui.add_space(8.0);
-        if self.booklet_rx.is_some() {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label("Downloading the booklet from edupython.lu…");
-            });
-            return;
-        }
-        ui.label("EduPython shows the booklet (a PDF) here, but it could not find it on this computer.");
-        if let Some(e) = &self.booklet_error {
-            ui.add_space(6.0);
-            ui.label(RichText::new(format!("The download did not work: {e}")).color(ui.visuals().warn_fg_color));
-        }
-        ui.add_space(10.0);
-        ui.label(RichText::new("Download it").strong());
-        if ui.button("Download again").on_hover_text(crate::config::BOOKLET_URL).clicked() {
-            self.booklet_error = None;
-            self.booklet_rx = Some(crate::runtime::download_booklet(ui.ctx().clone()));
-        }
-        if ui.link("Open the download page in the browser").clicked() {
-            ui.ctx().open_url(egui::OpenUrl::new_tab(crate::config::BOOKLET_URL));
-        }
-        ui.add_space(10.0);
-        ui.label(RichText::new("Or choose a PDF you have").strong());
-        if ui.button("Choose the PDF…").clicked() {
-            let mut picker = rfd::FileDialog::new().set_title("Choose the booklet (PDF)").add_filter("PDF", &["pdf"]);
-            if let Some(d) = dirs::download_dir() {
-                picker = picker.set_directory(d);
-            }
-            if let Some(path) = picker.pick_file() {
+    /// Show a PDF the pupil chose or dropped: copied to the app-data folder
+    /// (so it also works offline and when the original is deleted) and remembered.
+    fn adopt_booklet(&mut self, src: &Path) {
+        match crate::runtime::adopt_booklet(src) {
+            Ok(path) => {
+                let title = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
                 self.settings.booklet_file = Some(path.to_string_lossy().into_owned());
                 self.settings.booklet_page = 0;
                 self.settings.save();
-                self.booklet = Some(Booklet::new(path, self.school.booklet_title.clone(), 0));
+                self.booklet = Some(Booklet::new(path, title, 0));
+                self.booklet_error = None;
             }
+            Err(e) => self.booklet_error = Some(e),
         }
-        ui.label(RichText::new("EduPython remembers it for next time.").weak());
-        ui.add_space(10.0);
-        ui.label(RichText::new("Or put it next to EduPython").strong());
-        let folder = crate::config::program_folder().filter(|_| self.school.show_paths);
-        ui.label(match &folder {
-            Some(_) => format!("Name the file {} and put it in this folder:", crate::config::DEFAULT_BOOKLET),
-            None => format!("Name the file {} and put it in the same folder as EduPython.", crate::config::DEFAULT_BOOKLET),
+    }
+
+    /// Booklet panel when no booklet was found: download it, drop or choose a
+    /// PDF, and (folded) how IT installs it for everybody.
+    fn missing_booklet(&mut self, ui: &mut Ui) {
+        // A PDF dropped anywhere on the window while this panel is open.
+        let dropped = ui.ctx().input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).find(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("pdf"))));
+        if let Some(p) = dropped {
+            self.adopt_booklet(&p);
+            return;
+        }
+        let dragging = ui.ctx().input(|i| !i.raw.hovered_files.is_empty());
+
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.add_space(12.0);
+            ui.heading("No booklet yet");
+            ui.add_space(6.0);
+            ui.label("The booklet (Python reference, a PDF) is shown here. Add it once, EduPython keeps it.");
+            if self.booklet_rx.is_some() {
+                ui.add_space(10.0);
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label("Downloading the booklet…");
+                });
+            }
+            if let Some(e) = &self.booklet_error {
+                ui.add_space(6.0);
+                ui.label(RichText::new(e.as_str()).color(ui.visuals().warn_fg_color));
+            }
+
+            ui.add_space(14.0);
+            ui.label(RichText::new("Online").strong());
+            if ui
+                .add_enabled(self.booklet_rx.is_none(), egui::Button::new("Download the booklet"))
+                .on_hover_text("From edupython.lu (or gashi.lu if that does not answer)")
+                .clicked()
+            {
+                self.booklet_error = None;
+                self.booklet_rx = Some(crate::runtime::download_booklet(ui.ctx().clone()));
+            }
+
+            ui.add_space(14.0);
+            ui.label(RichText::new("Offline: you already have the PDF").strong());
+            let stroke_color = if dragging { ui.visuals().selection.stroke.color } else { ui.visuals().widgets.noninteractive.bg_stroke.color };
+            let fill = if dragging { ui.visuals().selection.bg_fill.gamma_multiply(0.3) } else { Color32::TRANSPARENT };
+            egui::Frame::new()
+                .stroke(egui::Stroke::new(if dragging { 2.0 } else { 1.0 }, stroke_color))
+                .fill(fill)
+                .corner_radius(8)
+                .inner_margin(16)
+                .show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.vertical_centered(|ui| {
+                        ui.label(RichText::new(if dragging { "Drop it here" } else { "Drag the PDF here" }).size(16.0));
+                        ui.add_space(6.0);
+                        ui.label(RichText::new("or").weak());
+                        ui.add_space(6.0);
+                        if ui.button("Choose the PDF…").clicked() {
+                            let mut picker = rfd::FileDialog::new().set_title("Choose the booklet (PDF)").add_filter("PDF", &["pdf"]);
+                            if let Some(d) = dirs::download_dir() {
+                                picker = picker.set_directory(d);
+                            }
+                            if let Some(path) = picker.pick_file() {
+                                self.adopt_booklet(&path);
+                            }
+                        }
+                    });
+                });
+            ui.label(RichText::new("EduPython keeps a copy, so it also works offline.").weak());
+
+            ui.add_space(14.0);
+            egui::CollapsingHeader::new("For IT: install it for all users").default_open(false).show(ui, |ui| {
+                ui.label("Any one of these. EduPython checks them at start, so restart it afterwards.");
+                ui.add_space(6.0);
+                let folder = crate::config::program_folder().filter(|_| self.school.show_paths);
+                ui.label(format!("1. Put the PDF, named {}, next to EduPython:", crate::config::DEFAULT_BOOKLET));
+                let where_ = folder.map(|f| f.display().to_string()).unwrap_or_else(|| "(the folder of EduPython)".into());
+                ui.add(egui::Label::new(RichText::new(where_).monospace()).selectable(true));
+                ui.add_space(6.0);
+                ui.label(format!("2. Or name it in {} (next to EduPython or given with --config):", crate::config::INI_NAME));
+                ui.add(egui::Label::new(RichText::new("[booklet]\nfile = Python reference.pdf\ntitle = Python Reference Guide").monospace()).selectable(true));
+                ui.add_space(6.0);
+                ui.label("3. Or give it in the shortcut (Target field):");
+                ui.add(egui::Label::new(RichText::new("EduPython.exe --booklet \"\\\\server\\share\\Python reference.pdf\"").monospace()).selectable(true));
+            });
         });
-        if let Some(f) = folder {
-            ui.add(egui::Label::new(RichText::new(f.display().to_string()).monospace()).selectable(true));
-        }
-        ui.label(RichText::new("Then restart EduPython.").weak());
     }
 
     /// Print (open the PDF in the viewer) or export the code as a PDF.
