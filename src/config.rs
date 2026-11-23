@@ -239,9 +239,22 @@ fn resolve_command(value: &str, base: &Path) -> String {
     }
 }
 
+/// Installed from the Microsoft Store (MSIX): the program folder is then
+/// read-only, so IT uses `%ProgramData%\EduPython` instead.
+pub fn is_store_app() -> bool {
+    cfg!(windows)
+        && std::env::current_exe()
+            .map(|e| e.to_string_lossy().to_ascii_lowercase().contains("\\windowsapps\\"))
+            .unwrap_or(false)
+}
+
 /// The folder to suggest for `booklet.pdf`: next to `EduPython.exe`
-/// (Windows, Linux) or next to `EduPython.app` (macOS).
+/// (Windows, Linux) or next to `EduPython.app` (macOS); for the Store
+/// version `%ProgramData%\EduPython`, which is searched as well.
 pub fn program_folder() -> Option<PathBuf> {
+    if is_store_app() {
+        return std::env::var_os("ProgramData").map(|pd| PathBuf::from(pd).join("EduPython"));
+    }
     let dir = std::env::current_exe().ok()?.parent()?.to_path_buf();
     if cfg!(target_os = "macos") && dir.ends_with("Contents/MacOS") {
         return dir.parent()?.parent()?.parent().map(Path::to_path_buf);

@@ -674,15 +674,28 @@ impl EduPythonApp {
                 ui.label("Any one of these. EduPython checks them at start, so restart it afterwards.");
                 ui.add_space(6.0);
                 let folder = crate::config::program_folder().filter(|_| self.school.show_paths);
-                ui.label(format!("1. Put the PDF, named {}, next to EduPython:", crate::config::DEFAULT_BOOKLET));
+                let store = crate::config::is_store_app();
+                ui.label(if store {
+                    format!("1. Put the PDF, named {}, in this folder (with {}, if any):", crate::config::DEFAULT_BOOKLET, crate::config::INI_NAME)
+                } else {
+                    format!("1. Put the PDF, named {}, next to EduPython:", crate::config::DEFAULT_BOOKLET)
+                });
                 let where_ = folder.map(|f| f.display().to_string()).unwrap_or_else(|| "(the folder of EduPython)".into());
                 ui.add(egui::Label::new(RichText::new(where_).monospace()).selectable(true));
                 ui.add_space(6.0);
-                ui.label(format!("2. Or name it in {} (next to EduPython or given with --config):", crate::config::INI_NAME));
+                ui.label(if store {
+                    format!("2. Or name it in {} (in that folder or given with --config):", crate::config::INI_NAME)
+                } else {
+                    format!("2. Or name it in {} (next to EduPython or given with --config):", crate::config::INI_NAME)
+                });
                 ui.add(egui::Label::new(RichText::new("[booklet]\nfile = Python reference.pdf\ntitle = Python Reference Guide").monospace()).selectable(true));
                 ui.add_space(6.0);
                 ui.label("3. Or give it in the shortcut (Target field):");
-                ui.add(egui::Label::new(RichText::new("EduPython.exe --booklet \"\\\\server\\share\\Python reference.pdf\"").monospace()).selectable(true));
+                let exe = if store { "edupython.exe" } else { "EduPython.exe" };
+                ui.add(
+                    egui::Label::new(RichText::new(format!("{exe} --booklet \"\\\\server\\share\\Python reference.pdf\"")).monospace())
+                        .selectable(true),
+                );
             });
         });
     }

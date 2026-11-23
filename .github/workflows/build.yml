@@ -5,6 +5,7 @@ name: Build EduPython
 #   EduPython-macos-arm64.dmg   (Apple Silicon)
 #   EduPython-macos-x64.dmg     (Intel Macs)
 #   EduPython-linux-x64.tar.gz  (64-bit Linux)
+#   EduPython-windows-x64.msix  (for the Microsoft Store, which signs it)
 # Push a tag like `v2.0.0` to publish them as a GitHub release.
 
 on:
@@ -78,6 +79,24 @@ jobs:
         if: runner.os == 'Windows'
         run: cp target/${{ matrix.target }}/release/edupython.exe dist/${{ matrix.artifact }}
 
+      # Microsoft Store package. Uploaded by hand in Partner Center; the Store
+      # signs it, so Store installs show no SmartScreen warning.
+      - name: Package MSIX (Windows)
+        if: runner.os == 'Windows'
+        env:
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+        run: |
+          version=$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)
+          python packaging/windows/make_msix.py target/${{ matrix.target }}/release/edupython.exe "$PWD/msix/EduPython-windows-x64.msix" "$version"
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
+        with:
+          name: EduPython-windows-x64.msix
+          path: msix/EduPython-windows-x64.msix
+
       - name: Package (Linux)
         if: runner.os == 'Linux'
         run: packaging/linux/make_tarball.sh target/${{ matrix.target }}/release/edupython dist/${{ matrix.artifact }}
@@ -117,5 +136,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/${{ matrix.artifact }}
+          files: |
+            dist/${{ matrix.artifact }}
+            msix/*.msix
           name: EduPython ${{ github.ref_name }}
