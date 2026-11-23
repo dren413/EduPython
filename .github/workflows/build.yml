@@ -87,9 +87,31 @@ jobs:
         run: packaging/macos/make_dmg.sh target/${{ matrix.target }}/release/edupython dist/${{ matrix.artifact }}
 
       - uses: actions/upload-artifact@v4
+        id: upload
         with:
           name: ${{ matrix.artifact }}
           path: dist/${{ matrix.artifact }}
+
+      # Windows release: code signing by SignPath Foundation (free for open
+      # source), so SmartScreen does not warn about the download. Every
+      # release has to be approved in SignPath. Runs only once the repository
+      # variable SIGNPATH_ORGANIZATION_ID and the secret SIGNPATH_API_TOKEN exist.
+      - name: Sign (Windows, SignPath)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') && vars.SIGNPATH_ORGANIZATION_ID != ''
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG || 'EduPython' }}
+          signing-policy-slug: ${{ vars.SIGNPATH_POLICY_SLUG || 'release-signing' }}
+          github-artifact-id: ${{ steps.upload.outputs.artifact-id }}
+          wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 86400
+          output-artifact-directory: signed
+
+      - name: Use the signed exe (Windows)
+        if: runner.os == 'Windows' && startsWith(github.ref, 'refs/tags/') && vars.SIGNPATH_ORGANIZATION_ID != ''
+        run: cp signed/${{ matrix.artifact }} dist/${{ matrix.artifact }}
 
       - name: Publish release
         if: startsWith(github.ref, 'refs/tags/')

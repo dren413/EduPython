@@ -46,33 +46,59 @@ pub fn embedded_python() -> Option<PathBuf> {
     None
 }
 
-/// File name of the built-in booklet (as pupils see it in the app-data folder).
+/// File name of the booklet that EduPython downloads (as pupils see it in the app-data folder).
 pub const BUNDLED_BOOKLET_NAME: &str = "Python reference.pdf";
-/// Title shown for the built-in booklet.
+/// Title shown for the downloaded booklet.
 pub const BUNDLED_BOOKLET_TITLE: &str = "Python Reference Guide";
 
-/// The booklet that ships inside EduPython, so there is always one that works.
-/// It is copied once (and again after an update that changes it) to
-/// `%LOCALAPPDATA%\EduPython\booklet\` (macOS: `~/Library/Application Support/EduPython/booklet/`,
-/// Linux: `~/.local/share/EduPython/booklet/`). Returns its path.
-pub fn bundled_booklet() -> Option<PathBuf> {
-    static PDF: &[u8] = include_bytes!("../assets/Python reference.pdf");
+/// Where the downloaded booklet is kept: `%LOCALAPPDATA%\EduPython\booklet\`
+/// (macOS: `~/Library/Application Support/EduPython/booklet/`,
+/// Linux: `~/.local/share/EduPython/booklet/`).
+fn booklet_cache() -> Option<PathBuf> {
+    Some(dirs::data_local_dir()?.join("EduPython").join("booklet").join(BUNDLED_BOOKLET_NAME))
+}
 
-    let dir = dirs::data_local_dir()?.join("EduPython").join("booklet");
-    let path = dir.join(BUNDLED_BOOKLET_NAME);
-    let up_to_date = std::fs::read(&path).is_ok_and(|b| b == PDF);
-    if !up_to_date {
-        std::fs::create_dir_all(&dir).ok()?;
-        // Write to a temporary file first, so a half-written PDF is never shown.
-        let tmp = dir.join(format!(".booklet-{}.tmp", std::process::id()));
-        std::fs::write(&tmp, PDF).ok()?;
-        if std::fs::rename(&tmp, &path).is_err() {
-            let _ = std::fs::remove_file(&tmp);
-            // Another EduPython may hold the file open (Windows); use it if it is complete.
-            if !std::fs::read(&path).is_ok_and(|b| b == PDF) {
-                return None;
+fn is_pdf(path: &std::path::Path) -> bool {
+    use std::io::Read;
+    let mut head = [0u8; 5];
+    std::fs::File::open(path).and_then(|mut f| f.read_exact(&mut head)).is_ok() && &head == b"%PDF-"
+}
+
+/// The booklet downloaded earlier, if there is one.
+///
+/// The booklet is not built into the program (it is not EduPython's own
+/// work, and the signed exe may only contain open-source code), so EduPython
+/// downloads it once from edupython.lu and keeps that copy, which then also
+/// works offline.
+pub fn cached_booklet() -> Option<PathBuf> {
+    booklet_cache().filter(|p| is_pdf(p))
+}
+
+/// Download the booklet in the background (with the `curl` that comes with
+/// Windows 10+, macOS and Linux) into the app-data folder. No personal data
+/// is sent. The result arrives on the channel; the UI is repainted then.
+pub fn download_booklet(ctx: eframe::egui::Context) -> std::sync::mpsc::Receiver<Result<PathBuf, String>> {
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let result = (|| {
+            let path = booklet_cache().ok_or("No app-data folder")?;
+            let dir = path.parent().ok_or("No app-data folder")?;
+            std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+            let tmp = dir.join(format!(".download-{}.tmp", std::process::id()));
+            let mut cmd = std::process::Command::new("curl");
+            cmd.args(["-fsSL", "--retry", "2", "--max-time", "120", "-o"]).arg(&tmp).arg(crate::config::BOOKLET_URL);
+            crate::python::hide_window(&mut cmd);
+            let out = cmd.output().map_err(|e| format!("Could not start the download: {e}"))?;
+            if !out.status.success() || !is_pdf(&tmp) {
+                let _ = std::fs::remove_file(&tmp);
+                let msg = String::from_utf8_lossy(&out.stderr).trim().to_string();
+                return Err(if msg.is_empty() { "The download failed. Is the computer online?".to_string() } else { msg });
             }
-        }
-    }
-    Some(path)
+            std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+            Ok(path)
+        })();
+        let _ = tx.send(result);
+        ctx.request_repaint();
+    });
+    rx
 }

@@ -61,6 +61,10 @@ pub struct EduPythonApp {
     active: usize,
     python: Option<PythonInfo>,
     python_rx: Option<Receiver<PythonInfo>>,
+    /// Booklet download in progress.
+    booklet_rx: Option<Receiver<Result<PathBuf, String>>>,
+    /// Why the last booklet download failed.
+    booklet_error: Option<String>,
     runner: Option<Runner>,
     run_kind: RunKind,
     console: Console,
@@ -112,17 +116,19 @@ impl EduPythonApp {
         let school = SchoolConfig::load(config.as_deref());
         // Which booklet: `--booklet <pdf>` (shortcut), then the school's (ini or
         // booklet.pdf next to the program), then a PDF the pupil chose, and
-        // finally the one built into EduPython (copied to the app-data folder).
+        // finally the one EduPython downloaded into the app-data folder.
         let booklet_arg = booklet_arg.map(|p| PathBuf::from(crate::config::expand_vars(&p.to_string_lossy()))).filter(|p| p.is_file());
         let stem = |p: &PathBuf| p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
         let booklet = booklet_arg
             .map(|p| (stem(&p), p))
             .or_else(|| school.booklet.clone().map(|p| (school.booklet_title.clone(), p)))
             .or_else(|| settings.booklet_file.as_ref().map(PathBuf::from).filter(|p| p.is_file()).map(|p| (stem(&p), p)))
-            .or_else(|| crate::runtime::bundled_booklet().map(|p| (crate::runtime::BUNDLED_BOOKLET_TITLE.to_string(), p)))
+            .or_else(|| crate::runtime::cached_booklet().map(|p| (crate::runtime::BUNDLED_BOOKLET_TITLE.to_string(), p)))
             .map(|(t, p)| Booklet::new(p, t, settings.booklet_page));
         let custom = if school.allow_change { settings.python_command.clone() } else { None };
         let python_rx = Some(python::detect_async(school.clone(), custom, ctx.clone()));
+        // No booklet at all: fetch it once, so there is always one that works.
+        let booklet_rx = booklet.is_none().then(|| crate::runtime::download_booklet(ctx.clone()));
         let mut app = Self {
             settings,
             logo,
@@ -132,6 +138,8 @@ impl EduPythonApp {
             active: 0,
             python: None,
             python_rx,
+            booklet_rx,
+            booklet_error: None,
             runner: None,
             run_kind: RunKind::Program,
             console: Console::default(),
@@ -583,14 +591,29 @@ impl EduPythonApp {
         ui.add_space(12.0);
         ui.heading("Booklet not found");
         ui.add_space(8.0);
+        if self.booklet_rx.is_some() {
+            ui.horizontal(|ui| {
+                ui.spinner();
+                ui.label("Downloading the booklet from edupython.lu…");
+            });
+            return;
+        }
         ui.label("EduPython shows the booklet (a PDF) here, but it could not find it on this computer.");
+        if let Some(e) = &self.booklet_error {
+            ui.add_space(6.0);
+            ui.label(RichText::new(format!("The download did not work: {e}")).color(ui.visuals().warn_fg_color));
+        }
         ui.add_space(10.0);
-        ui.label(RichText::new("1. Download the booklet").strong());
-        if ui.button("Download Python reference.pdf").on_hover_text(crate::config::BOOKLET_URL).clicked() {
+        ui.label(RichText::new("Download it").strong());
+        if ui.button("Download again").on_hover_text(crate::config::BOOKLET_URL).clicked() {
+            self.booklet_error = None;
+            self.booklet_rx = Some(crate::runtime::download_booklet(ui.ctx().clone()));
+        }
+        if ui.link("Open the download page in the browser").clicked() {
             ui.ctx().open_url(egui::OpenUrl::new_tab(crate::config::BOOKLET_URL));
         }
         ui.add_space(10.0);
-        ui.label(RichText::new("2. Show it in EduPython").strong());
+        ui.label(RichText::new("Or choose a PDF you have").strong());
         if ui.button("Choose the PDF…").clicked() {
             let mut picker = rfd::FileDialog::new().set_title("Choose the booklet (PDF)").add_filter("PDF", &["pdf"]);
             if let Some(d) = dirs::download_dir() {
@@ -1573,6 +1596,17 @@ impl eframe::App for EduPythonApp {
             if let Ok(info) = rx.try_recv() {
                 self.python = Some(info);
                 self.python_rx = None;
+            }
+        }
+        if let Some(Ok(result)) = self.booklet_rx.as_ref().map(|rx| rx.try_recv()) {
+            self.booklet_rx = None;
+            match result {
+                Ok(path) if self.booklet.is_none() => {
+                    self.booklet = Some(Booklet::new(path, crate::runtime::BUNDLED_BOOKLET_TITLE.to_string(), 0));
+                    self.booklet_error = None;
+                }
+                Ok(_) => {}
+                Err(e) => self.booklet_error = Some(e),
             }
         }
         self.poll_runner(&ctx);

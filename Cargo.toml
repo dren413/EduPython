@@ -1,9 +1,12 @@
 [package]
 name = "edupython"
-version = "2.0.2"
+version = "2.0.3"
 edition = "2024"
 description = "A native Python editor for school: code, run, and see your classes as UML"
 authors = ["Dren Gashi"]
+license = "MIT"
+repository = "https://github.com/dren413/EduPython"
+homepage = "https://www.edupython.lu"
 build = "build.rs"
 
 [dependencies]

@@ -14,6 +14,8 @@
   <a href="https://github.com/dren413/EduPython/releases">Downloads</a>
   ·
   <a href="https://github.com/dren413/EduPython/releases/latest">Latest Release</a>
+  ·
+  <a href="#code-signing-policy">Code signing policy</a>
 </p>
 
 ---
@@ -62,8 +64,9 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   without typing accents, and code such as `my_list[:]`). Text can be **selected and copied**
   (drag, double-click a word, Ctrl+C or right-click > Copy) and pastes into code with its
   indentation and plain `-`, `*` and `'` characters.
-  A booklet (*Python reference.pdf*) is **built into EduPython** and copied to the user's
-  app-data folder on first start, so there is always one that works. A school can show
+  If no booklet is installed, EduPython **downloads *Python reference.pdf* once** from
+  edupython.lu into the user's app-data folder, so there is always one that works (also offline
+  afterwards). A school can show
   another one (see below), so a new booklet needs no new EduPython version.
 - The editor scrolls only vertically; long lines wrap. Ctrl + mouse wheel or trackpad pinch
   changes the code size (also A− / A+ in the toolbar).
@@ -103,7 +106,7 @@ Target:  \\server\apps\EduPython\EduPython.exe --config "\\server\config\edupyth
 
 An update then only replaces `EduPython.exe`; the ini and the booklet stay where they are.
 The booklet shown is the first one found of: `--booklet`, the ini's `[booklet] file`
-(or a `booklet.pdf` next to the program), a PDF the pupil chose, and finally the built-in one
+(or a `booklet.pdf` next to the program), a PDF the pupil chose, and finally the downloaded one
 (`%LOCALAPPDATA%\EduPython\booklet\Python reference.pdf`).
 
 **At home no ini is needed.** On first start EduPython creates its own `edupython.ini` with
@@ -169,3 +172,27 @@ Python builds come from [python-build-standalone](https://github.com/astral-sh/p
 **macOS note:** the DMG gets an ad-hoc signature only. On first launch pupils must
 right-click ▸ Open (or allow it in System Settings ▸ Privacy & Security). To avoid that, set
 `MACOS_SIGN_IDENTITY` to a Developer ID certificate and notarize the DMG.
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
+[SignPath Foundation](https://signpath.org).
+
+- Committers and reviewers: [Dren Gashi](https://github.com/dren413)
+- Approvers: [Dren Gashi](https://github.com/dren413)
+
+Only the Windows exe built by the GitHub workflow from this repository is signed, and every
+release is approved by hand.
+
+## Privacy
+
+This program will not transfer any information to other networked systems unless specifically
+requested by the user or the person installing or operating it. The only connection EduPython
+makes on its own is a one-time download of the booklet PDF from edupython.lu when no booklet is
+installed; no personal data is sent.
+
+## License
+
+EduPython is open source under the [MIT License](LICENSE). The built-in Python runtime and
+pygame keep their own licenses (PSF License, LGPL). The booklet PDF is not part of EduPython;
+it is downloaded separately.
