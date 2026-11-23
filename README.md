@@ -177,12 +177,11 @@ right-click ▸ Open (or allow it in System Settings ▸ Privacy & Security). To
 
 ## Code signing policy
 
-- **Microsoft Store**: the Windows version in the Microsoft Store is packaged from this repository by
-  the GitHub workflow (`EduPython-windows-x64.msix`) and signed by Microsoft when it is published.
-  Store installs show no warning.
-- **Direct download**: the exe, the DMGs and the Linux tarball are not signed yet. Edge may say the
-  exe "isn't commonly downloaded": choose *··· → Keep*, and in the next window *Show more → Run anyway*.
-  On a Mac, open it once, then allow it under *System Settings → Privacy & Security → Open Anyway*.
+The downloads are not signed yet; signing of the Windows exe with an open-source code-signing
+certificate is being set up. Until then Edge may say the exe "isn't commonly downloaded": choose
+*··· → Keep*, and in the next window *Show more → Run anyway*. On a Mac, open it once, then allow it
+under *System Settings → Privacy & Security → Open Anyway*.
+
 - Committers, reviewers and release approvers: [Dren Gashi](https://github.com/dren413)
 
 ## Privacy
