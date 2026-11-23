@@ -190,7 +190,7 @@ release is approved by hand.
 
 This program will not transfer any information to other networked systems unless specifically
 requested by the user or the person installing or operating it. The only connection EduPython
-makes on its own is a one-time download of the booklet PDF from edupython.lu when no booklet is
+makes on its own is a one-time download of the booklet PDF from edupython.lu (or its mirror gashi.lu) when no booklet is
 installed; no personal data is sent.
 
 ## License
