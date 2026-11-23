@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 IDENTITY = {
-    "identity_name": os.environ.get("MSIX_IDENTITY_NAME") or "EduPython",
-    "publisher": os.environ.get("MSIX_PUBLISHER") or "CN=EduPython",
+    "identity_name": os.environ.get("MSIX_IDENTITY_NAME") or "DrenGashi.EduPython",
+    "publisher": os.environ.get("MSIX_PUBLISHER") or "CN=F72C4EEF-416D-4EBA-A377-86A65C9CFAE2",
     "publisher_display_name": os.environ.get("MSIX_PUBLISHER_DISPLAY_NAME") or "Dren Gashi",
 }
 

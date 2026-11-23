@@ -177,14 +177,13 @@ right-click ▸ Open (or allow it in System Settings ▸ Privacy & Security). To
 
 ## Code signing policy
 
-Free code signing provided by [SignPath.io](https://about.signpath.io), certificate by
-[SignPath Foundation](https://signpath.org).
-
-- Committers and reviewers: [Dren Gashi](https://github.com/dren413)
-- Approvers: [Dren Gashi](https://github.com/dren413)
-
-Only the Windows exe built by the GitHub workflow from this repository is signed, and every
-release is approved by hand.
+- **Microsoft Store**: the Windows version in the Microsoft Store is packaged from this repository by
+  the GitHub workflow (`EduPython-windows-x64.msix`) and signed by Microsoft when it is published.
+  Store installs show no warning.
+- **Direct download**: the exe, the DMGs and the Linux tarball are not signed yet. Edge may say the
+  exe "isn't commonly downloaded": choose *··· → Keep*, and in the next window *Show more → Run anyway*.
+  On a Mac, open it once, then allow it under *System Settings → Privacy & Security → Open Anyway*.
+- Committers, reviewers and release approvers: [Dren Gashi](https://github.com/dren413)
 
 ## Privacy
 
