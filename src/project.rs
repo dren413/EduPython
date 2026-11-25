@@ -264,14 +264,11 @@ impl Project {
         Ok(self.files.len() - 1)
     }
 
-    /// Close the tab of a dropped file (the file itself is kept).
+    /// Close a tab (the file itself is kept, unsaved changes are lost).
+    /// The last tab cannot be closed here: the app closes the project then.
     pub fn close_file(&mut self, idx: usize) {
-        if self.files.len() < 2 || self.files[idx].external.is_none() {
-            return;
-        }
-        let f = self.files.remove(idx);
-        if self.main_file == f.name {
-            self.main_file = self.files[0].name.clone();
+        if self.files.len() > 1 {
+            self.files.remove(idx);
         }
     }
 
@@ -285,14 +282,19 @@ impl Project {
 
     pub fn save(&mut self) -> Result<(), String> {
         for i in 0..self.files.len() {
-            let path = self.path_of(i);
-            let f = &mut self.files[i];
-            if f.is_dirty() {
-                fs::write(path, &f.text).map_err(|e| format!("Could not save {}: {e}", f.name))?;
-                f.saved_text = f.text.clone();
-            }
+            self.save_file(i)?;
         }
         self.save_meta()
+    }
+
+    pub fn save_file(&mut self, idx: usize) -> Result<(), String> {
+        let path = self.path_of(idx);
+        let f = &mut self.files[idx];
+        if f.is_dirty() {
+            fs::write(path, &f.text).map_err(|e| format!("Could not save {}: {e}", f.name))?;
+            f.saved_text = f.text.clone();
+        }
+        Ok(())
     }
 
     /// Saves only the UML layout / main file (never asks the user).
@@ -415,7 +417,18 @@ mod tests {
         assert_eq!(p.files.len(), 1);
         assert!(other.join("hello.py").exists());
         p.close_file(0);
-        assert_eq!(p.files.len(), 1, "project files cannot be closed");
+        assert_eq!(p.files.len(), 1, "the last tab stays");
+
+        // Closing a project file keeps it (and main.py stays the main file).
+        let j = p.add_file("extra").unwrap();
+        p.files[j].text = "x = 1\n".into();
+        p.files[0].text = "lost".into();
+        p.save_file(j).unwrap();
+        p.close_file(0);
+        assert_eq!((p.files[0].name.as_str(), p.main_file.as_str()), ("extra.py", "main.py"));
+        assert_eq!(fs::read_to_string(tmp.join("Demo/main.py")).unwrap(), project_main);
+        let j = p.open_file(&tmp.join("Demo/main.py")).unwrap();
+        assert!(p.files[j].external.is_none() && p.files[j].text == project_main);
 
         // A new file in the project folder becomes a normal project file.
         fs::write(tmp.join("Demo/new.py"), "").unwrap();

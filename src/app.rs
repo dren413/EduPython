@@ -37,6 +37,7 @@ enum Dialog {
     NewFile { name: String, error: String },
     RenameFile { idx: usize, name: String, error: String },
     ConfirmDeleteFile { idx: usize },
+    ConfirmCloseFile { idx: usize },
     Python { input: String, error: String },
     /// Print (export = false) or export as PDF; `all` = every file of the project.
     Print { export: bool, all: bool },
@@ -847,6 +848,9 @@ impl EduPythonApp {
         if self.project.is_some() && pressed(shortcut(cmd, Key::T)) {
             self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
         }
+        if self.project.is_some() && pressed(shortcut(cmd, Key::W)) {
+            self.dialog = Some(Dialog::ConfirmCloseFile { idx: self.active });
+        }
         if pressed(shortcut(Modifiers::SHIFT, Key::F5)) || pressed(shortcut(cmd | Modifiers::SHIFT, Key::Period)) {
             self.stop();
         }
@@ -1053,13 +1057,12 @@ impl EduPythonApp {
         });
     }
 
-    /// One tab per file. Tabs of project files cannot be closed (only deleted,
-    /// right-click > Delete); dropped files can be closed, not deleted.
+    /// One tab per file. Closing a tab (after a confirmation) keeps the file;
+    /// project files can also be deleted (right-click > Delete).
     fn file_tabs(&mut self, ui: &mut Ui) {
         let Some(p) = self.project.as_mut() else { return };
         let editor_bg = if self.settings.dark { Color32::from_rgb(40, 44, 52) } else { Color32::from_rgb(253, 253, 253) };
         let accent = ui.visuals().selection.stroke.color;
-        let mut close = None;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
             for (i, f) in p.files.iter().enumerate() {
@@ -1067,9 +1070,14 @@ impl EduPythonApp {
                 let font = egui::TextStyle::Button.resolve(ui.style());
                 let text_color = if active { ui.visuals().strong_text_color() } else { ui.visuals().text_color() };
                 let galley = ui.painter().layout_no_wrap(f.name.clone(), font, text_color);
-                let dot_w = if f.is_dirty() { 12.0 } else { 0.0 };
-                let size = egui::vec2(galley.size().x + dot_w + 20.0, ui.spacing().interact_size.y + 4.0);
+                let size = egui::vec2(galley.size().x + 36.0, ui.spacing().interact_size.y + 4.0);
                 let (rect, resp) = ui.allocate_exact_size(size, egui::Sense::click());
+                // Like VS Code: a dot while not saved, an X to close otherwise
+                // (and also instead of the dot while the mouse is on it).
+                let x_rect = egui::Rect::from_center_size(egui::pos2(rect.right() - 13.0, rect.center().y), egui::vec2(18.0, 18.0));
+                let x_resp = ui
+                    .interact(x_rect, ui.scope_id().with(("close_tab", &f.name)), egui::Sense::click())
+                    .on_hover_text(if f.is_dirty() { "Close (not saved yet)" } else { "Close (Ctrl+W)" });
                 if ui.is_rect_visible(rect) {
                     let painter = ui.painter();
                     let radius = egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 };
@@ -1083,13 +1091,20 @@ impl EduPythonApp {
                     painter.rect_filled(rect, radius, fill);
                     if active {
                         let top = egui::Rect::from_min_size(rect.min, egui::vec2(rect.width(), 2.0));
-                        painter.rect_filled(top, egui::CornerRadius { nw: 5, ne: 5, sw: 0, se: 0 }, accent);
+                        painter.rect_filled(top, radius, accent);
                     }
                     let pos = egui::pos2(rect.left() + 10.0, rect.center().y - galley.size().y / 2.0);
-                    let gw = galley.size().x;
                     painter.galley(pos, galley, text_color);
-                    if f.is_dirty() {
-                        painter.circle_filled(egui::pos2(pos.x + gw + 8.0, rect.center().y), 3.0, Color32::from_rgb(220, 160, 60));
+                    let c = x_rect.center();
+                    if x_resp.hovered() {
+                        painter.rect_filled(x_rect, 4.0, ui.visuals().widgets.hovered.bg_fill);
+                    }
+                    if f.is_dirty() && !x_resp.hovered() {
+                        painter.circle_filled(c, 4.0, Color32::from_rgb(220, 160, 60));
+                    } else {
+                        let stroke = egui::Stroke::new(1.5, text_color);
+                        painter.line_segment([c + egui::vec2(-3.5, -3.5), c + egui::vec2(3.5, 3.5)], stroke);
+                        painter.line_segment([c + egui::vec2(-3.5, 3.5), c + egui::vec2(3.5, -3.5)], stroke);
                     }
                 }
                 let mut hover = String::new();
@@ -1099,21 +1114,21 @@ impl EduPythonApp {
                 if let Some(path) = f.external.as_ref().filter(|_| self.school.show_paths) {
                     hover.push_str(&format!("{}\n", path.display()));
                 }
-                hover.push_str(if f.external.is_some() { "Right-click: rename, close" } else { "Right-click: rename, delete" });
+                hover.push_str(if f.external.is_some() { "Right-click: rename, close" } else { "Right-click: rename, close, delete" });
                 let resp = resp.on_hover_text(hover);
-                if resp.clicked() {
+                if x_resp.clicked() || resp.middle_clicked() {
+                    self.dialog = Some(Dialog::ConfirmCloseFile { idx: i });
+                } else if resp.clicked() {
                     self.active = i;
                 }
                 resp.context_menu(|ui| {
                     if ui.button("Rename…").clicked() {
                         self.dialog = Some(Dialog::RenameFile { idx: i, name: f.name.clone(), error: String::new() });
                     }
-                    if f.external.is_some() {
-                        let r = ui.add_enabled(p.files.len() > 1 && !f.is_dirty(), egui::Button::new("Close tab"));
-                        if r.on_disabled_hover_text(if f.is_dirty() { "Save first (Ctrl+S)" } else { "The only open file" }).clicked() {
-                            close = Some(i);
-                        }
-                    } else if ui.add_enabled(p.files.len() > 1, egui::Button::new("Delete…")).clicked() {
+                    if ui.button("Close…").clicked() {
+                        self.dialog = Some(Dialog::ConfirmCloseFile { idx: i });
+                    }
+                    if f.external.is_none() && ui.add_enabled(p.files.len() > 1, egui::Button::new("Delete…")).clicked() {
                         self.dialog = Some(Dialog::ConfirmDeleteFile { idx: i });
                     }
                 });
@@ -1123,13 +1138,26 @@ impl EduPythonApp {
                 self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
             }
         });
-        if let Some(i) = close {
-            p.close_file(i);
-            if self.active >= i {
+    }
+
+    /// Close a tab; closing the last one goes back to the welcome screen.
+    fn close_tab(&mut self, idx: usize) {
+        let Some(p) = self.project.as_mut() else { return };
+        if p.files.len() > 1 {
+            p.close_file(idx);
+            if self.active > idx || self.active >= p.files.len() {
                 self.active = self.active.saturating_sub(1);
             }
-            self.uml_stale = true;
+        } else {
+            self.close_project_quietly();
+            self.project = None;
+            self.active = 0;
+            self.console.clear();
+            self.error_marker = None;
         }
+        self.goto = None;
+        self.cursor_line = None;
+        self.uml_stale = true;
     }
 
     fn editor_area(&mut self, ui: &mut Ui) {
@@ -1348,6 +1376,34 @@ impl EduPythonApp {
                     }
                     keep &= !cancel;
                 }
+                Dialog::ConfirmCloseFile { idx } => {
+                    let p = self.project.as_ref().unwrap();
+                    let (name, dirty, last) = (p.files[*idx].name.clone(), p.files[*idx].is_dirty(), p.files.len() == 1);
+                    ui.heading("Close File");
+                    ui.label(if dirty { format!("{name} has unsaved changes.") } else { format!("Close {name}? The file itself is kept.") });
+                    if last {
+                        ui.label(RichText::new("This is the last open file: EduPython goes back to the start screen.").weak());
+                    }
+                    if self.is_running() && last {
+                        ui.label(RichText::new("The running program is stopped.").weak());
+                    }
+                    ui.add_space(8.0);
+                    ui.horizontal(|ui| {
+                        let first = if dirty { "Save and close" } else { "Close" };
+                        if ui.button(RichText::new(first).strong()).clicked() || enter {
+                            match self.project.as_mut().unwrap().save_file(*idx) {
+                                Ok(()) => self.close_tab(*idx),
+                                Err(e) => self.error(e),
+                            }
+                            keep = false;
+                        } else if dirty && ui.button("Close without saving").clicked() {
+                            self.close_tab(*idx);
+                            keep = false;
+                        } else if ui.button("Cancel").clicked() {
+                            keep = false;
+                        }
+                    });
+                }
                 Dialog::Print { export, all } => {
                     ui.heading(if *export { "Export as PDF" } else { "Print" });
                     ui.add_space(6.0);
@@ -1508,6 +1564,7 @@ impl EduPythonApp {
                             ("Ctrl+N / Ctrl+O", "New / open project"),
                             ("Ctrl+Shift+O", "Open Python file"),
                             ("Ctrl+T", "New file"),
+                            ("Ctrl+W", "Close file"),
                             ("Ctrl+P", "Print (as PDF, with file path and name)"),
                             ("Ctrl+F", "Search the booklet"),
                             ("Ctrl + mouse wheel / pinch", "Zoom the code or the booklet (under the mouse)"),
