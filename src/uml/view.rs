@@ -126,7 +126,8 @@ impl UmlView {
         let mut fit_clicked = false;
         let mut arrange_clicked = false;
         let mut zoom_btn = 1.0;
-        ui.horizontal(|ui| {
+        // Wrapped, so the panel can be made narrower than all buttons in one row.
+        ui.horizontal_wrapped(|ui| {
             ui.strong("UML");
             ui.separator();
             if ui.add(crate::icons::IconButton::new(crate::icons::Icon::Plus).text("Class")).on_hover_text("Add a new class").clicked() {

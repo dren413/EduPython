@@ -12,10 +12,11 @@ cat > "$apps/edupython.desktop" <<DESKTOP
 Type=Application
 Name=EduPython
 Comment=Python editor for school
-Exec="$here/EduPython" %f
+Exec="$here/EduPython" %F
 Icon=edupython
 Terminal=false
 Categories=Development;Education;IDE;
+MimeType=text/x-python;
 StartupWMClass=edupython
 DESKTOP
 chmod 644 "$apps/edupython.desktop"

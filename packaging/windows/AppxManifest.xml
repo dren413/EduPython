@@ -51,6 +51,14 @@
             <desktop:ExecutionAlias Alias="edupython.exe" />
           </uap3:AppExecutionAlias>
         </uap3:Extension>
+        <!-- "Open with" for Python files. -->
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="python">
+            <uap:SupportedFileTypes>
+              <uap:FileType>.py</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
       </Extensions>
     </Application>
   </Applications>

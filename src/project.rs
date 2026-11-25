@@ -22,7 +22,7 @@ impl Template {
 
     pub fn label(self) -> &'static str {
         match self {
-            Template::Script => "Script (2CB) – input, print, if, loops",
+            Template::Script => "Script (2CB) – BMI with input, print and if",
             Template::Classes => "Classes (1CB) – a class in its own file",
             Template::Pygame => "Pygame (1CB) – Pong with Paddle and Ball classes",
             Template::Empty => "Empty – just main.py",
@@ -39,16 +39,8 @@ impl Template {
     }
 }
 
-const TEMPLATE_SCRIPT: &str = r#"# My first program
-name = input("What is your name? ")
-print("Hello", name + "!")
-
-age = int(input("How old are you? "))
-if age >= 18:
-    print("You are an adult.")
-else:
-    print("In", 18 - age, "years you will be an adult.")
-"#;
+/// Exercise 3.9 (2CB): body mass index.
+const TEMPLATE_SCRIPT: &str = include_str!("../assets/templates/bmi.py");
 
 const TEMPLATE_CLASSES_MAIN: &str = r#"from point import Point
 
@@ -89,11 +81,14 @@ pub struct SourceFile {
     pub name: String,
     pub text: String,
     saved_text: String,
+    /// Full path of a file opened by drag & drop: it stays where it is, and
+    /// `name` is then only the (unique) tab name. `None`: in the project folder.
+    pub external: Option<PathBuf>,
 }
 
 impl SourceFile {
     fn new(name: &str, text: String) -> Self {
-        Self { name: name.to_string(), saved_text: text.clone(), text }
+        Self { name: name.to_string(), saved_text: text.clone(), text, external: None }
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -109,6 +104,22 @@ pub struct Project {
     meta_dirty: bool,
     /// Created by the old tkinter version (`project.json` + `gui.py`).
     pub legacy: bool,
+    /// Only dropped files, no real project: nothing but the files is written.
+    pub loose: bool,
+}
+
+/// Compare paths after resolving links, relative parts, …
+fn same_path(a: &Path, b: &Path) -> bool {
+    a == b || matches!((fs::canonicalize(a), fs::canonicalize(b)), (Ok(x), Ok(y)) if x == y)
+}
+
+pub fn is_python_file(path: &Path) -> bool {
+    path.extension().is_some_and(|e| e.eq_ignore_ascii_case("py")) && path.is_file()
+}
+
+fn read_source(path: &Path) -> Result<String, String> {
+    let text = fs::read_to_string(path).map_err(|e| format!("Could not read {}: {e}", path.display()))?;
+    Ok(text.trim_start_matches('\u{feff}').replace("\r\n", "\n"))
 }
 
 pub fn sanitize_name(name: &str) -> String {
@@ -200,7 +211,68 @@ impl Project {
         };
         // main file first, then alphabetical
         files.sort_by_key(|f| (f.name != main_file, f.name.to_lowercase()));
-        Ok(Project { dir: dir.to_path_buf(), files, main_file, uml_positions: meta.uml_positions, meta_dirty: false, legacy })
+        Ok(Project { dir: dir.to_path_buf(), files, main_file, uml_positions: meta.uml_positions, meta_dirty: false, legacy, loose: false })
+    }
+
+    /// A single file without a project (dropped on the welcome screen).
+    pub fn open_single(path: &Path) -> Result<Project, String> {
+        let dir = path.parent().ok_or("Not a file.")?.to_path_buf();
+        let mut p = Project {
+            dir,
+            files: Vec::new(),
+            main_file: String::new(),
+            uml_positions: BTreeMap::new(),
+            meta_dirty: false,
+            legacy: false,
+            loose: true,
+        };
+        p.open_file(path)?;
+        p.main_file = p.files[0].name.clone();
+        Ok(p)
+    }
+
+    /// Where the file of a tab is on disk.
+    pub fn path_of(&self, idx: usize) -> PathBuf {
+        let f = &self.files[idx];
+        f.external.clone().unwrap_or_else(|| self.dir.join(&f.name))
+    }
+
+    pub fn index_of_path(&self, path: &Path) -> Option<usize> {
+        (0..self.files.len()).find(|&i| same_path(&self.path_of(i), path))
+    }
+
+    /// Open an existing file in a tab and return the tab's index. The file is
+    /// edited where it is; if it is open already, that tab is returned.
+    pub fn open_file(&mut self, path: &Path) -> Result<usize, String> {
+        if let Some(i) = self.index_of_path(path) {
+            return Ok(i);
+        }
+        let text = read_source(path)?;
+        let file_name = path.file_name().ok_or("Not a file.")?.to_string_lossy().into_owned();
+        let in_project = !self.loose && path.parent().is_some_and(|d| same_path(d, &self.dir));
+        let mut name = file_name.clone();
+        let mut n = 2;
+        while self.index_of(&name).is_some() {
+            name = format!("{file_name} ({n})");
+            n += 1;
+        }
+        let mut file = SourceFile::new(&name, text);
+        if !in_project || name != file_name {
+            file.external = Some(path.to_path_buf());
+        }
+        self.files.push(file);
+        Ok(self.files.len() - 1)
+    }
+
+    /// Close the tab of a dropped file (the file itself is kept).
+    pub fn close_file(&mut self, idx: usize) {
+        if self.files.len() < 2 || self.files[idx].external.is_none() {
+            return;
+        }
+        let f = self.files.remove(idx);
+        if self.main_file == f.name {
+            self.main_file = self.files[0].name.clone();
+        }
     }
 
     pub fn is_dirty(&self) -> bool {
@@ -212,9 +284,11 @@ impl Project {
     }
 
     pub fn save(&mut self) -> Result<(), String> {
-        for f in &mut self.files {
+        for i in 0..self.files.len() {
+            let path = self.path_of(i);
+            let f = &mut self.files[i];
             if f.is_dirty() {
-                fs::write(self.dir.join(&f.name), &f.text).map_err(|e| format!("Could not save {}: {e}", f.name))?;
+                fs::write(path, &f.text).map_err(|e| format!("Could not save {}: {e}", f.name))?;
                 f.saved_text = f.text.clone();
             }
         }
@@ -223,7 +297,7 @@ impl Project {
 
     /// Saves only the UML layout / main file (never asks the user).
     pub fn save_meta(&mut self) -> Result<(), String> {
-        if !self.meta_dirty {
+        if !self.meta_dirty || self.loose {
             return Ok(());
         }
         let meta = Meta { version: 2, main_file: self.main_file.clone(), uml_positions: self.uml_positions.clone() };
@@ -253,11 +327,16 @@ impl Project {
         if new_name == old {
             return Ok(());
         }
-        if self.index_of(&new_name).is_some() || self.dir.join(&new_name).exists() {
+        let old_path = self.path_of(idx);
+        let new_path = old_path.with_file_name(&new_name);
+        if self.index_of(&new_name).is_some() || new_path.exists() {
             return Err(format!("'{new_name}' already exists."));
         }
-        if self.dir.join(&old).exists() {
-            fs::rename(self.dir.join(&old), self.dir.join(&new_name)).map_err(|e| format!("Could not rename: {e}"))?;
+        if old_path.exists() {
+            fs::rename(&old_path, &new_path).map_err(|e| format!("Could not rename: {e}"))?;
+        }
+        if self.files[idx].external.is_some() {
+            self.files[idx].external = Some(new_path);
         }
         self.files[idx].name = new_name.clone();
         if self.main_file == old {
@@ -269,7 +348,7 @@ impl Project {
 
     pub fn delete_file(&mut self, idx: usize) -> Result<(), String> {
         let name = self.files[idx].name.clone();
-        let path = self.dir.join(&name);
+        let path = self.path_of(idx);
         if path.exists() {
             fs::remove_file(&path).map_err(|e| format!("Could not delete {name}: {e}"))?;
         }
@@ -309,6 +388,47 @@ mod tests {
         assert_eq!(p2.files.len(), 3);
         assert_eq!(p2.uml_positions["Player"], [10.0, 20.0]);
         assert!(python_file_name("1bad").is_err());
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn dropped_files_are_edited_in_place() {
+        let tmp = std::env::temp_dir().join(format!("edupython-drop-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&tmp);
+        let other = tmp.join("other");
+        fs::create_dir_all(&other).unwrap();
+        let ext = other.join("main.py");
+        fs::write(&ext, "print(1)\r\n").unwrap();
+
+        let mut p = Project::create(&tmp, "Demo", Template::Script).unwrap();
+        let project_main = fs::read_to_string(tmp.join("Demo/main.py")).unwrap();
+        let i = p.open_file(&ext).unwrap();
+        assert_eq!((i, p.files[i].name.as_str(), p.files[i].text.as_str()), (1, "main.py (2)", "print(1)\n"));
+        assert_eq!(p.open_file(&ext).unwrap(), i, "no second tab for the same file");
+        p.files[i].text = "print(2)\n".into();
+        p.save().unwrap();
+        assert_eq!(fs::read_to_string(&ext).unwrap(), "print(2)\n");
+        assert_eq!(fs::read_to_string(tmp.join("Demo/main.py")).unwrap(), project_main);
+        p.rename_file(i, "hello").unwrap();
+        assert!(other.join("hello.py").exists());
+        p.close_file(i);
+        assert_eq!(p.files.len(), 1);
+        assert!(other.join("hello.py").exists());
+        p.close_file(0);
+        assert_eq!(p.files.len(), 1, "project files cannot be closed");
+
+        // A new file in the project folder becomes a normal project file.
+        fs::write(tmp.join("Demo/new.py"), "").unwrap();
+        let i = p.open_file(&tmp.join("Demo/new.py")).unwrap();
+        assert!(p.files[i].external.is_none());
+
+        // Without a project: only that file, and no edupython.json next to it.
+        let mut p = Project::open_single(&other.join("hello.py")).unwrap();
+        p.mark_meta_dirty();
+        p.save().unwrap();
+        assert_eq!(p.files.len(), 1);
+        assert!(!other.join(META_FILE).exists());
+        assert!(Project::open_single(&other.join("missing.py")).is_err());
         let _ = fs::remove_dir_all(&tmp);
     }
 

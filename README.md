@@ -48,9 +48,12 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   the import added to `main.py`), **attributes** (optionally as constructor parameters),
   **methods** with typed parameters and return types, or a **constructor**, or to **delete a method**.
   You can type types in UML style (`(int,int)`); the code gets `tuple[int, int]`.
-- **File tabs** above the editor: one tab per file (tabs cannot be closed). **+** adds a file;
-  right-click a tab to rename or delete it.
-- **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
+- **File tabs** above the editor: one tab per file. **+** adds a file; right-click a tab to rename or delete it.
+- **Drag and drop**: drop `.py` files on the window to edit and run them, with or without a project.
+  They stay where they are (Save changes the original file). Right-click the tab to close it.
+- **Open with**: right-click a `.py` file > *Open with* > EduPython. (Windows exe: choose the exe once
+  with *Choose another app*. Linux: run `install.sh` once.)
+- **Templates**: Script (2CB, the BMI exercise 3.9), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
   Click the Python version in the toolbar to see the interpreter, all installed libraries with
   their versions, and to install pygame-ce into it.

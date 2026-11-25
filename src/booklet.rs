@@ -1110,7 +1110,7 @@ impl Booklet {
     }
 
     fn toolbar(&mut self, ui: &mut Ui, count: usize) {
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             ui.strong(&self.title);
             if count == 0 {
                 return;
@@ -1153,7 +1153,7 @@ impl Booklet {
             return;
         }
         // ── search ──
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             let id = ui.scope_id().with("booklet_search");
             let resp = ui.add(
                 egui::TextEdit::singleline(&mut self.query)

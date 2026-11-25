@@ -41,6 +41,7 @@ enum Dialog {
     /// Print (export = false) or export as PDF; `all` = every file of the project.
     Print { export: bool, all: bool },
     About,
+    Message(String),
     Shortcuts,
     Unsaved(Pending),
     AddClass { name: String, base: String, own_file: bool, add_import: bool, error: String },
@@ -96,6 +97,7 @@ impl EduPythonApp {
     pub fn new(cc: &eframe::CreationContext<'_>, open_arg: Option<PathBuf>, config: Option<PathBuf>, booklet_arg: Option<PathBuf>) -> Self {
         let settings = Settings::load();
         let ctx = &cc.egui_ctx;
+        crate::open_files::set_context(ctx);
         ctx.set_theme(if settings.dark { egui::Theme::Dark } else { egui::Theme::Light });
         ctx.set_zoom_factor(settings.ui_zoom.clamp(0.6, 2.5));
         // Zoom (booklet, UML) with Ctrl + mouse wheel on every platform, and also
@@ -198,8 +200,10 @@ impl EduPythonApp {
 
     fn set_project(&mut self, project: Project) {
         self.close_project_quietly();
-        self.settings.add_recent(&project.dir.to_string_lossy());
-        self.settings.save();
+        if !project.loose {
+            self.settings.add_recent(&project.dir.to_string_lossy());
+            self.settings.save();
+        }
         self.console.clear();
         if project.legacy {
             self.console.push(
@@ -234,6 +238,49 @@ impl EduPythonApp {
                 self.error(e);
             }
         }
+    }
+
+    /// Python files dropped on the window open in tabs (in the open project,
+    /// or on their own) and are edited where they are.
+    fn handle_dropped_files(&mut self, ctx: &Context) {
+        let mut dropped: Vec<PathBuf> = ctx.input(|i| {
+            i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| crate::project::is_python_file(p)).collect()
+        });
+        // … and files from "Open with EduPython" (a missing one gives a message).
+        dropped.extend(crate::open_files::take());
+        let mut errors = Vec::new();
+        for path in dropped {
+            let opened = match self.project.as_mut() {
+                Some(p) => p.open_file(&path).map(|i| self.active = i),
+                None => Project::open_single(&path).map(|p| self.set_project(p)),
+            };
+            if let Err(e) = opened {
+                errors.push(e);
+            }
+            self.uml_stale = true;
+        }
+        if !errors.is_empty() {
+            self.dialog = Some(Dialog::Message(errors.join("\n")));
+        }
+    }
+
+    /// "Drop to open" while Python files are dragged over the window.
+    fn drop_hint(&self, ctx: &Context) {
+        let python = ctx.input(|i| {
+            i.raw.hovered_files.iter().filter_map(|f| f.path.as_ref()).any(|p| crate::project::is_python_file(p))
+        });
+        if !python {
+            return;
+        }
+        egui::Area::new(Id::unique("drop_hint"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
+            .interactable(false)
+            .show(ctx, |ui| {
+                egui::Frame::popup(ui.style()).inner_margin(24).show(ui, |ui| {
+                    ui.label(RichText::new("Drop to open the Python file in a new tab").size(18.0).strong());
+                });
+            });
     }
 
     /// Ask about unsaved changes before doing `p`.
@@ -337,8 +384,10 @@ impl EduPythonApp {
         }
         let Some(info) = self.python_ready() else { return };
         let p = self.project.as_ref().unwrap();
-        let script = p.files[self.active.min(p.files.len().saturating_sub(1))].name.clone();
-        let dir = p.dir.clone();
+        let path = p.path_of(self.active.min(p.files.len().saturating_sub(1)));
+        let script = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        // Dropped files run in their own folder, so their imports and data files work.
+        let dir = path.parent().map(Path::to_path_buf).unwrap_or_else(|| p.dir.clone());
         self.console.clear();
         self.stderr_buf.clear();
         self.error_marker = None;
@@ -446,15 +495,9 @@ impl EduPythonApp {
         let p = self.project.as_ref()?;
         let path = Path::new(path);
         let name = path.file_name()?.to_str()?;
-        let idx = p.index_of(name)?;
-        let parent = path.parent().filter(|d| !d.as_os_str().is_empty());
-        match parent {
-            None => Some(idx),
-            Some(d) => {
-                let a = std::fs::canonicalize(d).ok()?;
-                let b = std::fs::canonicalize(&p.dir).ok()?;
-                (a == b).then_some(idx)
-            }
+        match path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            None => p.index_of(name),
+            Some(_) => p.index_of_path(path),
         }
     }
 
@@ -711,7 +754,7 @@ impl EduPythonApp {
         // The main file first, the others in tab order.
         order.sort_by_key(|&i| p.files[i].name != p.main_file);
         let files: Vec<crate::print::PrintFile> =
-            order.iter().map(|&i| crate::print::PrintFile { path: p.dir.join(&p.files[i].name), text: p.files[i].text.clone() }).collect();
+            order.iter().map(|&i| crate::print::PrintFile { path: p.path_of(i), text: p.files[i].text.clone() }).collect();
         let name = if all { p.name() } else { format!("{}_{}", p.name(), p.files[order[0]].name.trim_end_matches(".py")) };
         let info = crate::print::PrintInfo::now();
         if export {
@@ -982,12 +1025,13 @@ impl EduPythonApp {
         });
     }
 
-    /// One tab per project file. Tabs cannot be closed: a file disappears
-    /// only when it is deleted (right-click > Delete).
+    /// One tab per file. Tabs of project files cannot be closed (only deleted,
+    /// right-click > Delete); dropped files can be closed, not deleted.
     fn file_tabs(&mut self, ui: &mut Ui) {
         let Some(p) = self.project.as_mut() else { return };
         let editor_bg = if self.settings.dark { Color32::from_rgb(40, 44, 52) } else { Color32::from_rgb(253, 253, 253) };
         let accent = ui.visuals().selection.stroke.color;
+        let mut close = None;
         ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing = egui::vec2(2.0, 2.0);
             for (i, f) in p.files.iter().enumerate() {
@@ -1020,7 +1064,14 @@ impl EduPythonApp {
                         painter.circle_filled(egui::pos2(pos.x + gw + 8.0, rect.center().y), 3.0, Color32::from_rgb(220, 160, 60));
                     }
                 }
-                let hover = if f.is_dirty() { "Not saved yet.\nRight-click: rename, delete" } else { "Right-click: rename, delete" };
+                let mut hover = String::new();
+                if f.is_dirty() {
+                    hover.push_str("Not saved yet.\n");
+                }
+                if let Some(path) = f.external.as_ref().filter(|_| self.school.show_paths) {
+                    hover.push_str(&format!("{}\n", path.display()));
+                }
+                hover.push_str(if f.external.is_some() { "Right-click: rename, close" } else { "Right-click: rename, delete" });
                 let resp = resp.on_hover_text(hover);
                 if resp.clicked() {
                     self.active = i;
@@ -1029,7 +1080,12 @@ impl EduPythonApp {
                     if ui.button("Rename…").clicked() {
                         self.dialog = Some(Dialog::RenameFile { idx: i, name: f.name.clone(), error: String::new() });
                     }
-                    if ui.add_enabled(p.files.len() > 1, egui::Button::new("Delete…")).clicked() {
+                    if f.external.is_some() {
+                        let r = ui.add_enabled(p.files.len() > 1 && !f.is_dirty(), egui::Button::new("Close tab"));
+                        if r.on_disabled_hover_text(if f.is_dirty() { "Save first (Ctrl+S)" } else { "The only open file" }).clicked() {
+                            close = Some(i);
+                        }
+                    } else if ui.add_enabled(p.files.len() > 1, egui::Button::new("Delete…")).clicked() {
                         self.dialog = Some(Dialog::ConfirmDeleteFile { idx: i });
                     }
                 });
@@ -1039,6 +1095,13 @@ impl EduPythonApp {
                 self.dialog = Some(Dialog::NewFile { name: String::new(), error: String::new() });
             }
         });
+        if let Some(i) = close {
+            p.close_file(i);
+            if self.active >= i {
+                self.active = self.active.saturating_sub(1);
+            }
+            self.uml_stale = true;
+        }
     }
 
     fn editor_area(&mut self, ui: &mut Ui) {
@@ -1128,6 +1191,8 @@ impl EduPythonApp {
             if ui.add(IconButton::new(Icon::Open).text(RichText::new("Open Project Folder…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
                 self.request(Pending::OpenProject(None));
             }
+            ui.add_space(8.0);
+            ui.label(RichText::new("or drag a Python file here").weak());
             if !self.settings.recent_projects.is_empty() {
                 ui.add_space(24.0);
                 ui.label(RichText::new("Recent projects").strong());
@@ -1390,6 +1455,15 @@ impl EduPythonApp {
                         }
                     });
                 }
+                Dialog::Message(text) => {
+                    ui.heading("EduPython");
+                    ui.add_space(6.0);
+                    ui.label(text.as_str());
+                    ui.add_space(8.0);
+                    if ui.button("Close").clicked() || enter {
+                        keep = false;
+                    }
+                }
                 Dialog::Shortcuts => {
                     ui.heading("Keyboard Shortcuts");
                     egui::Grid::new("keys").num_columns(2).striped(true).show(ui, |ui| {
@@ -1647,7 +1721,23 @@ fn insert_import(src: &str, import: &str) -> String {
     s
 }
 
+/// Show the contents of a side panel without letting them widen it. A panel
+/// that is wider than the user drags it leaves an unpainted (black) strip.
+fn keep_panel_size<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let rect = ui.available_rect_before_wrap();
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(Layout::top_down(Align::Min)));
+    child.shrink_clip_rect(rect);
+    let r = add(&mut child);
+    ui.advance_cursor_after_rect(rect);
+    r
+}
+
 impl eframe::App for EduPythonApp {
+    /// Anything no panel paints has the window color instead of black.
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        visuals.panel_fill.to_normalized_gamma_f32()
+    }
+
     fn ui(&mut self, ui: &mut Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
 
@@ -1700,6 +1790,7 @@ impl eframe::App for EduPythonApp {
         }
 
         if self.dialog.is_none() {
+            self.handle_dropped_files(&ctx);
             self.shortcuts(&ctx);
         }
 
@@ -1722,9 +1813,9 @@ impl eframe::App for EduPythonApp {
 
         if self.settings.show_booklet {
             if let Some(b) = self.booklet.as_mut() {
-                egui::Panel::right("booklet").resizable(true).default_size(520.0).min_size(240.0).show(ui, |ui| b.show(ui));
+                egui::Panel::right("booklet").resizable(true).default_size(520.0).min_size(240.0).show(ui, |ui| keep_panel_size(ui, |ui| b.show(ui)));
             } else {
-                egui::Panel::right("booklet").resizable(true).default_size(380.0).min_size(240.0).show(ui, |ui| self.missing_booklet(ui));
+                egui::Panel::right("booklet").resizable(true).default_size(380.0).min_size(240.0).show(ui, |ui| keep_panel_size(ui, |ui| self.missing_booklet(ui)));
             }
         }
 
@@ -1768,7 +1859,7 @@ impl eframe::App for EduPythonApp {
                 egui::Panel::left("uml").resizable(true).default_size(460.0).min_size(220.0).show(ui, |ui| {
                     let p = self.project.as_mut().unwrap();
                     self.uml.show_grid = self.settings.uml_grid;
-                    action = self.uml.show(ui, &self.classes, &mut p.uml_positions, self.settings.dark);
+                    action = keep_panel_size(ui, |ui| self.uml.show(ui, &self.classes, &mut p.uml_positions, self.settings.dark));
                 });
                 if let Some(a) = action {
                     self.handle_uml_action(a);
@@ -1778,6 +1869,7 @@ impl eframe::App for EduPythonApp {
 
         egui::CentralPanel::default().show(ui, |ui| self.editor_area(ui));
         self.dialogs(&ctx);
+        self.drop_hint(&ctx);
     }
 
     /// On a Mac, Ctrl works like Cmd for every shortcut (Ctrl+S, Ctrl+Z,
@@ -1872,5 +1964,49 @@ mod tests {
         }
         assert!(matches!(raw.events[1], egui::Event::Copy));
         assert!(matches!(raw.events[2], egui::Event::ModifiersChanged(m) if m.command));
+    }
+}
+
+#[cfg(test)]
+mod panel_tests {
+    use super::*;
+
+    /// While the edge is dragged, the next panel must start at the mouse.
+    #[test]
+    fn uml_panel_follows_the_mouse() {
+        let ctx = Context::default();
+        let mut uml = UmlView::default();
+        let mut positions = Default::default();
+        let mut frame = |events: Vec<egui::Event>| {
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1000.0, 600.0));
+            let mut left = 0.0;
+            let input = egui::RawInput { screen_rect: Some(screen), events, ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                egui::Panel::left("uml").resizable(true).default_size(460.0).min_size(220.0).show(ui, |ui| {
+                    keep_panel_size(ui, |ui| uml.show(ui, &[], &mut positions, false));
+                });
+                left = ui.available_rect_before_wrap().left();
+            });
+            out.textures_delta.clear();
+            left
+        };
+        let button = |x: f32, pressed| egui::Event::PointerButton {
+            pos: egui::pos2(x, 300.0),
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: Modifiers::NONE,
+        };
+        let at = |x: f32| egui::Event::PointerMoved(egui::pos2(x, 300.0));
+        let start = frame(vec![]);
+        frame(vec![at(start)]);
+        frame(vec![button(start, true)]);
+        for x in [400.0, 320.0, 250.0] {
+            frame(vec![at(x)]);
+            let left = frame(vec![at(x)]);
+            assert!((left - x).abs() < 3.0, "dragged to {x}, but the next panel starts at {left}");
+        }
+        frame(vec![button(250.0, false)]);
+        let left = frame(vec![]);
+        assert!((left - 250.0).abs() < 3.0, "after release: {left}");
     }
 }

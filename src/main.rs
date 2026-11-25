@@ -7,6 +7,7 @@ mod console;
 mod editor;
 mod highlight;
 mod icons;
+mod open_files;
 mod project;
 mod print;
 mod python;
@@ -31,6 +32,8 @@ fn main() -> eframe::Result {
     }
     let options = eframe::NativeOptions { viewport, ..Default::default() };
     let args = Args::parse(std::env::args_os().skip(1));
+    open_files::push(args.files.iter().filter_map(|f| std::path::absolute(f).ok()));
+    open_files::install();
     eframe::run_native("EduPython", options, Box::new(move |cc| Ok(Box::new(app::EduPythonApp::new(cc, args.project, args.config, args.booklet)))))
 }
 
@@ -64,7 +67,7 @@ fn install_crash_log() {
     }));
 }
 
-/// Command line: `EduPython.exe [--config <edupython.ini>] [--booklet <pdf>] [project folder]`.
+/// Command line: `EduPython.exe [--config <edupython.ini>] [--booklet <pdf>] [project folder] [file.py …]`.
 /// `--config=<file>` and `--booklet=<pdf>` also work. Useful in a Start-menu
 /// shortcut, so the exe can be replaced on update while the ini and the
 /// booklet stay where IT put them.
@@ -73,6 +76,8 @@ struct Args {
     project: Option<PathBuf>,
     config: Option<PathBuf>,
     booklet: Option<PathBuf>,
+    /// Python files ("Open with EduPython").
+    files: Vec<PathBuf>,
 }
 
 impl Args {
@@ -89,6 +94,8 @@ impl Args {
                 out.booklet = Some(PathBuf::from(v));
             } else if matches!(s.as_ref(), "--booklet" | "-booklet" | "/booklet" | "-b") {
                 out.booklet = it.next().map(PathBuf::from);
+            } else if s.to_ascii_lowercase().ends_with(".py") && !std::path::Path::new(&a).is_dir() {
+                out.files.push(PathBuf::from(a));
             } else if out.project.is_none() {
                 out.project = Some(PathBuf::from(a));
             }
@@ -109,11 +116,13 @@ mod tests {
     fn command_line() {
         assert_eq!(parse(&[]), Args::default());
         assert_eq!(parse(&["proj"]), Args { project: Some("proj".into()), ..Args::default() });
-        assert_eq!(parse(&["--config", "S:\\a.ini", "proj"]), Args { project: Some("proj".into()), config: Some("S:\\a.ini".into()), booklet: None });
-        assert_eq!(parse(&["proj", "--config=x.ini"]), Args { project: Some("proj".into()), config: Some("x.ini".into()), booklet: None });
+        assert_eq!(parse(&["--config", "S:\\a.ini", "proj"]), Args { project: Some("proj".into()), config: Some("S:\\a.ini".into()), ..Args::default() });
+        assert_eq!(parse(&["proj", "--config=x.ini"]), Args { project: Some("proj".into()), config: Some("x.ini".into()), ..Args::default() });
         assert_eq!(parse(&["/config", "x.ini"]).config, Some("x.ini".into()));
         let a = parse(&["--config", "x.ini", "--booklet", "S:\\Python reference.pdf", "proj"]);
-        assert_eq!(a, Args { project: Some("proj".into()), config: Some("x.ini".into()), booklet: Some("S:\\Python reference.pdf".into()) });
+        assert_eq!(a, Args { project: Some("proj".into()), config: Some("x.ini".into()), booklet: Some("S:\\Python reference.pdf".into()), ..Args::default() });
+        let a = parse(&["a b.py", "proj", "C.PY"]);
+        assert_eq!(a, Args { project: Some("proj".into()), files: vec!["a b.py".into(), "C.PY".into()], ..Args::default() });
         assert_eq!(parse(&["--booklet=b.pdf"]).booklet, Some("b.pdf".into()));
     }
 }
