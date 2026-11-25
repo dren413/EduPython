@@ -30,7 +30,7 @@ impl Default for Settings {
             ui_zoom: 1.0,
             python_command: None,
             show_uml: true,
-            show_booklet: false,
+            show_booklet: true,
             uml_grid: true,
             booklet_page: 0,
             recent_projects: Vec::new(),
