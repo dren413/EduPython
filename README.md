@@ -53,7 +53,7 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
 - **Templates**: Script (2CB), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.
 - **Python**: uses the built-in Python (release builds) or finds an installed one.
   Click the Python version in the toolbar to see the interpreter, all installed libraries with
-  their versions, and to install pygame into it.
+  their versions, and to install pygame-ce into it.
 - **Print** (Ctrl+P) and **Export as PDF**: the whole project or one file, with colors and line
   numbers. Every page shows the **full path of the file**, the login name and the date, so a
   teacher knows whose printout it is. Windows and macOS use the system's own print dialog;
@@ -90,8 +90,8 @@ Python reference.pdf    <- the booklet named in the ini
 - `[python] path = ...` (repeatable): the interpreters to use, **always tried first**.
   If none work and `fallback_search = yes`, EduPython searches the computer as usual.
 - `allow_change = no`: pupils cannot pick another interpreter (the default with an ini).
-- `allow_install = no`: hides *Install pygame* (the default with an ini).
-- `packages = pygame, numpy`: checked at start; missing ones turn the toolbar dot orange.
+- `allow_install = no`: hides *Install pygame-ce* (the default with an ini).
+- `packages = pygame, numpy`: import names (pygame-ce is imported as `pygame`), checked at start; missing ones turn the toolbar dot orange.
 - `packages_path = ...`: extra package folders (added to `PYTHONPATH`).
 - `[booklet] file = ...` and `title = ...`: the booklet PDF (relative to the ini).
 - `[display] show_paths = no`: hides file and network paths (Python, package folders,
@@ -156,7 +156,7 @@ builds:
   the app menu. Needs a 64-bit Linux desktop (Ubuntu 22.04 or newer, Debian 12, Fedora, …).
   School settings can also go to `/etc/edupython/edupython.ini`.
 
-All of them have **Python 3.12 + pygame built in**. On first start the built-in Python is unpacked
+All of them have **Python 3.12 + pygame-ce built in**. On first start the built-in Python is unpacked
 once (a few seconds) into the user's local app-data folder
 (`%LOCALAPPDATA%\EduPython` / `~/Library/Application Support/EduPython` / `~/.local/share/EduPython`).
 Push a tag like `v2.0.0` to publish a release.
@@ -164,7 +164,7 @@ Push a tag like `v2.0.0` to publish a release.
 To build one locally:
 
 ```bash
-python3 packaging/prepare_python.py aarch64-apple-darwin python-runtime.zip   # downloads Python, installs pygame
+python3 packaging/prepare_python.py aarch64-apple-darwin python-runtime.zip   # downloads Python, installs pygame-ce
 EDUPYTHON_PYTHON_ZIP="$PWD/python-runtime.zip" cargo build --release --features bundled-python
 packaging/macos/make_dmg.sh target/release/edupython EduPython.dmg         # macOS only
 ```
@@ -194,5 +194,5 @@ installed; no personal data is sent.
 ## License
 
 EduPython is open source under the [MIT License](LICENSE). The built-in Python runtime and
-pygame keep their own licenses (PSF License, LGPL). The booklet PDF is not part of EduPython;
+pygame-ce keep their own licenses (PSF License, LGPL). The booklet PDF is not part of EduPython;
 it is downloaded separately.

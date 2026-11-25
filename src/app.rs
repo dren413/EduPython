@@ -359,8 +359,8 @@ impl EduPythonApp {
         let Some(info) = self.python_ready() else { return };
         let dir = self.project.as_ref().map(|p| p.dir.clone()).unwrap_or_else(std::env::temp_dir);
         self.console.clear();
-        self.info(format!("Installing pygame for {} …", info.exec.display()));
-        match Runner::start(&info.exec, &dir, &["-m", "pip", "install", "--upgrade", "pygame"], ctx) {
+        self.info(format!("Installing pygame-ce for {} …", info.exec.display()));
+        match Runner::start(&info.exec, &dir, &["-m", "pip", "install", "--upgrade", "pygame-ce"], ctx) {
             Ok(r) => {
                 self.runner = Some(r);
                 self.run_kind = RunKind::PipInstall;
@@ -1284,7 +1284,7 @@ impl EduPythonApp {
                                 if *ok {
                                     ui.label("installed");
                                 } else if name == "pygame" && self.school.allow_install {
-                                    install = ui.add_enabled(!self.is_running(), egui::Button::new("Install pygame")).clicked();
+                                    install = ui.add_enabled(!self.is_running(), egui::Button::new("Install pygame-ce")).clicked();
                                 } else {
                                     ui.label(RichText::new("not installed").color(Color32::from_rgb(220, 70, 70)));
                                 }
