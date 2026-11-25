@@ -428,7 +428,7 @@ mod tests {
         assert_eq!((p.files[0].name.as_str(), p.main_file.as_str()), ("extra.py", "main.py"));
         assert_eq!(fs::read_to_string(tmp.join("Demo/main.py")).unwrap(), project_main);
         let j = p.open_file(&tmp.join("Demo/main.py")).unwrap();
-        assert!(p.files[j].external.is_none() && p.files[j].text == project_main);
+        assert!(p.files[j].external.is_none() && p.files[j].text == project_main.replace("\r\n", "\n"));
 
         // A new file in the project folder becomes a normal project file.
         fs::write(tmp.join("Demo/new.py"), "").unwrap();
