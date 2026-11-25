@@ -267,7 +267,7 @@ impl EduPythonApp {
     /// Choose Python files; they open in tabs like dropped ones.
     fn open_file_dialog(&mut self) {
         let mut d = rfd::FileDialog::new().set_title("Open Python files").add_filter("Python", &["py"]);
-        let dir = self.project.as_ref().map(|p| p.dir.clone()).or_else(|| self.school.projects_folder.clone());
+        let dir = self.project.as_ref().map(|p| p.dir.clone()).or_else(|| self.projects_folder());
         if let Some(dir) = dir.filter(|d| d.is_dir()) {
             d = d.set_directory(dir);
         }
@@ -302,22 +302,27 @@ impl EduPythonApp {
         }
     }
 
+    /// The folder for projects: the one this user chose last, else the ini's.
+    fn projects_folder(&self) -> Option<PathBuf> {
+        self.settings.projects_folder.as_ref().map(PathBuf::from).filter(|d| d.is_dir()).or_else(|| self.school.projects_folder.clone())
+    }
+
+    /// Where the New Project dialog starts.
+    fn new_project_location(&self) -> String {
+        self.projects_folder()
+            .or_else(|| self.project.as_ref().filter(|p| !p.loose).and_then(|p| p.dir.parent().map(Path::to_path_buf)))
+            .or_else(dirs::document_dir)
+            .map(|d| d.to_string_lossy().into_owned())
+            .unwrap_or_default()
+    }
+
     fn perform(&mut self, p: Pending) {
         match p {
             Pending::Close => {
                 self.allow_close = true;
             }
             Pending::NewProject => {
-                // The school's folder (ini `[projects] folder`) wins, so every
-                // new project starts in e.g. H:\Documents.
-                let location = self
-                    .school
-                    .projects_folder
-                    .as_ref()
-                    .map(|d| d.to_string_lossy().into_owned())
-                    .or_else(|| self.project.as_ref().and_then(|p| p.dir.parent().map(|d| d.to_string_lossy().into_owned())))
-                    .or_else(|| dirs::document_dir().map(|d| d.to_string_lossy().into_owned()))
-                    .unwrap_or_default();
+                let location = self.new_project_location();
                 self.dialog = Some(Dialog::NewProject {
                     name: String::new(),
                     location,
@@ -328,7 +333,7 @@ impl EduPythonApp {
             Pending::OpenProject(dir) => {
                 let dir = dir.or_else(|| {
                     let mut d = rfd::FileDialog::new().set_title("Open a project folder");
-                    if let Some(f) = self.school.projects_folder.as_ref().filter(|f| f.is_dir()) {
+                    if let Some(f) = self.projects_folder().filter(|f| f.is_dir()) {
                         d = d.set_directory(f);
                     }
                     d.pick_folder()
@@ -1275,7 +1280,9 @@ impl EduPythonApp {
                     if ok {
                         match Project::create(Path::new(location.trim()), name, *template) {
                             Ok(p) => {
-                                self.set_project(p);
+                                let offered = self.new_project_location();
+                                self.settings.remember_projects_folder(location.trim(), &offered, self.school.projects_folder.as_deref());
+                                self.set_project(p); // saves the settings
                                 keep = false;
                             }
                             Err(e) => *error = e,

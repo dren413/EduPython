@@ -101,7 +101,8 @@ Python reference.pdf    <- the booklet named in the ini
 - `[display] show_paths = no`: hides file and network paths (Python, package folders,
   the ini) from pupils.
 - `[projects] folder = H:\Documents`: the folder offered for every new project and in
-  *Open Project* (pupils can still choose another one).
+  *Open Project*. Pupils can still choose another one when they create a project; EduPython remembers
+  it for them.
 
 **Ini or booklet kept elsewhere (e.g. on a network share).** Start EduPython with
 `--config <file>` and/or `--booklet <pdf>`, for example from a Start-menu shortcut:

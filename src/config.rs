@@ -293,6 +293,7 @@ packages = pygame
 show_paths = yes
 
 [projects]
+; Folder offered for new projects. A folder you choose in the app is remembered and wins.
 ; folder = ~/Documents
 "#;
 
