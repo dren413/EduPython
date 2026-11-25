@@ -264,6 +264,16 @@ impl EduPythonApp {
         }
     }
 
+    /// Choose Python files; they open in tabs like dropped ones.
+    fn open_file_dialog(&mut self) {
+        let mut d = rfd::FileDialog::new().set_title("Open Python files").add_filter("Python", &["py"]);
+        let dir = self.project.as_ref().map(|p| p.dir.clone()).or_else(|| self.school.projects_folder.clone());
+        if let Some(dir) = dir.filter(|d| d.is_dir()) {
+            d = d.set_directory(dir);
+        }
+        crate::open_files::push(d.pick_files().unwrap_or_default());
+    }
+
     /// "Drop to open" while Python files are dragged over the window.
     fn drop_hint(&self, ctx: &Context) {
         let python = ctx.input(|i| {
@@ -813,6 +823,10 @@ impl EduPythonApp {
         if pressed(shortcut(cmd, Key::N)) {
             self.request(Pending::NewProject);
         }
+        // Before Ctrl+O, which would also match with Shift.
+        if pressed(shortcut(cmd | Modifiers::SHIFT, Key::O)) {
+            self.open_file_dialog();
+        }
         if pressed(shortcut(cmd, Key::O)) {
             self.request(Pending::OpenProject(None));
         }
@@ -856,6 +870,9 @@ impl EduPythonApp {
                 }
                 if ui.add(egui::Button::new("Open Project…").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND, Key::O)))).clicked() {
                     self.request(Pending::OpenProject(None));
+                }
+                if ui.add(egui::Button::new("Open File…").shortcut_text(ctx.format_shortcut(&shortcut(Modifiers::COMMAND | Modifiers::SHIFT, Key::O)))).clicked() {
+                    self.open_file_dialog();
                 }
                 let recent = self.settings.recent_projects.clone();
                 ui.add_enabled_ui(!recent.is_empty(), |ui| {
@@ -952,9 +969,15 @@ impl EduPythonApp {
             if ui.add(IconButton::new(Icon::New).text("New")).on_hover_text("New project").clicked() {
                 self.request(Pending::NewProject);
             }
-            if ui.add(IconButton::new(Icon::Open).text("Open")).on_hover_text("Open a project folder").clicked() {
-                self.request(Pending::OpenProject(None));
-            }
+            let open = ui.add(IconButton::new(Icon::Open).text("Open")).on_hover_text("Open a project folder or a Python file");
+            egui::Popup::menu(&open).show(|ui| {
+                if ui.button("Project…").clicked() {
+                    self.request(Pending::OpenProject(None));
+                }
+                if ui.button("File…").clicked() {
+                    self.open_file_dialog();
+                }
+            });
             let dirty = self.is_dirty();
             if ui.add_enabled(self.project.is_some(), IconButton::new(Icon::Save).text(if dirty { "Save •" } else { "Save" })).clicked() {
                 self.save();
@@ -1190,6 +1213,10 @@ impl EduPythonApp {
             ui.add_space(6.0);
             if ui.add(IconButton::new(Icon::Open).text(RichText::new("Open Project Folder…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
                 self.request(Pending::OpenProject(None));
+            }
+            ui.add_space(6.0);
+            if ui.add(IconButton::new(Icon::Open).text(RichText::new("Open Python File…").size(16.0)).min_size(egui::vec2(240.0, 36.0))).clicked() {
+                self.open_file_dialog();
             }
             ui.add_space(8.0);
             ui.label(RichText::new("or drag a Python file here").weak());
@@ -1472,6 +1499,7 @@ impl EduPythonApp {
                             ("Shift+F5", "Stop"),
                             ("Ctrl+S", "Save"),
                             ("Ctrl+N / Ctrl+O", "New / open project"),
+                            ("Ctrl+Shift+O", "Open Python file"),
                             ("Ctrl+T", "New file"),
                             ("Ctrl+P", "Print (as PDF, with file path and name)"),
                             ("Ctrl+F", "Search the booklet"),

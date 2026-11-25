@@ -51,6 +51,7 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
 - **File tabs** above the editor: one tab per file. **+** adds a file; right-click a tab to rename or delete it.
 - **Drag and drop**: drop `.py` files on the window to edit and run them, with or without a project.
   They stay where they are (Save changes the original file). Right-click the tab to close it.
+- **Open File** (Ctrl+Shift+O): open single `.py` files without a project; they work like dropped files.
 - **Open with**: right-click a `.py` file > *Open with* > EduPython. (Windows exe: choose the exe once
   with *Choose another app*. Linux: run `install.sh` once.)
 - **Templates**: Script (2CB, the BMI exercise 3.9), Classes (1CB), Pygame (1CB, the Pong exercise 5.19), Empty.

@@ -570,6 +570,10 @@ fn known_call_type(callee: &str, args: &str) -> Option<String> {
         "random.randint" | "randint" | "random.randrange" | "randrange" => "int",
         "random.random" | "random.uniform" | "uniform" => "float",
         "math.floor" | "math.ceil" | "math.factorial" | "math.gcd" => "int",
+        // from math import …
+        "floor" | "ceil" | "factorial" | "gcd" => "int",
+        "sqrt" | "sin" | "cos" | "tan" | "asin" | "acos" | "atan" | "atan2" | "hypot" | "radians" | "degrees" | "exp" | "log"
+        | "log2" | "log10" => "float",
         "time.time" | "time.perf_counter" => "float",
         "pygame.display.set_mode" | "pygame.image.load" | "pygame.Surface" => "Surface",
         "pygame.font.SysFont" | "pygame.font.Font" => "Font",
@@ -650,6 +654,14 @@ fn infer(expr: &str, env: &Env) -> Option<String> {
     }
     if let Some(t) = is_number(e) {
         return Some(t.into());
+    }
+    // `-x`, `+x`
+    if let Some(rest) = e.strip_prefix(['-', '+']) {
+        return match infer(rest, env)?.as_str() {
+            "bool" => Some("int".into()),
+            t @ ("int" | "float" | "complex") => Some(t.into()),
+            _ => None,
+        };
     }
     if let Some(t) = string_literal_type(e) {
         return Some(t.into());
@@ -1294,6 +1306,23 @@ class BigBall(Ball):
         assert_eq!(methods(&c[0]), ["__init__(x, y, radius:int)", "is_big(): bool", "area(): float"]);
         assert_eq!(c[1].bases, ["Ball"]);
         assert_eq!(attrs(&c[1]), ["a: int", "b: str"]);
+    }
+
+    #[test]
+    fn minus_sign_and_imported_math_functions() {
+        let src = r#"
+from math import sqrt
+class Ball:
+    def __init__(self, x, v):
+        self.x = x
+        self.vx = randint(-v + 50, v - 50)
+        self.vy = -sqrt(v ** 2 - self.vx ** 2)   # negative => starting upwards
+        self.a = -self.vx
+        self.b = -self.vy * 2
+        self.c = -x
+        self.d = -(1 + 2)
+"#;
+        assert_eq!(attrs(&parse(src)[0]), ["x", "vx: int", "vy: float", "a: int", "b: float", "c", "d: int"]);
     }
 
     #[test]
