@@ -819,7 +819,7 @@ dependencies = [
 
 [[package]]
 name = "edupython"
-version = "2.0.7"
+version = "2.0.8"
 dependencies = [
  "arboard",
  "chrono",
