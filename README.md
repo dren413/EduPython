@@ -48,9 +48,10 @@ UML class diagram. There is no web view, no Node.js, and nothing to install for 
   the import added to `main.py`), **attributes** (optionally as constructor parameters),
   **methods** with typed parameters and return types, or a **constructor**, or to **delete a method**.
   You can type types in UML style (`(int,int)`); the code gets `tuple[int, int]`.
-- **File tabs** above the editor: one tab per file. **+** adds a file; right-click a tab to rename or delete it.
+- **File tabs** above the editor: one tab per file. **+** adds a file; A dot means *not saved yet*, the **X**
+  (or Ctrl+W) closes the tab after asking and keeps the file; right-click a tab to rename or delete it.
 - **Drag and drop**: drop `.py` files on the window to edit and run them, with or without a project.
-  They stay where they are (Save changes the original file). Right-click the tab to close it.
+  They stay where they are (Save changes the original file).
 - **Open File** (Ctrl+Shift+O): open single `.py` files without a project; they work like dropped files.
 - **Open with**: right-click a `.py` file > *Open with* > EduPython. (Windows exe: choose the exe once
   with *Choose another app*. Linux: run `install.sh` once.)
@@ -161,7 +162,7 @@ builds:
   the app menu. Needs a 64-bit Linux desktop (Ubuntu 22.04 or newer, Debian 12, Fedora, …).
   School settings can also go to `/etc/edupython/edupython.ini`.
 
-All of them have **Python 3.12 + pygame-ce built in**. On first start the built-in Python is unpacked
+All of them have **Python 3.12 + pygame-ce, numpy and matplotlib built in**. On first start the built-in Python is unpacked
 once (a few seconds) into the user's local app-data folder
 (`%LOCALAPPDATA%\EduPython` / `~/Library/Application Support/EduPython` / `~/.local/share/EduPython`).
 Push a tag like `v2.0.0` to publish a release.
@@ -169,7 +170,7 @@ Push a tag like `v2.0.0` to publish a release.
 To build one locally:
 
 ```bash
-python3 packaging/prepare_python.py aarch64-apple-darwin python-runtime.zip   # downloads Python, installs pygame-ce
+python3 packaging/prepare_python.py aarch64-apple-darwin python-runtime.zip   # downloads Python, installs the packages
 EDUPYTHON_PYTHON_ZIP="$PWD/python-runtime.zip" cargo build --release --features bundled-python
 packaging/macos/make_dmg.sh target/release/edupython EduPython.dmg         # macOS only
 ```
@@ -199,5 +200,6 @@ installed; no personal data is sent.
 ## License
 
 EduPython is open source under the [MIT License](LICENSE). The built-in Python runtime and
-pygame-ce keep their own licenses (PSF License, LGPL). The booklet PDF is not part of EduPython;
+its packages keep their own licenses (Python: PSF License, pygame-ce: LGPL, numpy: BSD,
+matplotlib: matplotlib License). The booklet PDF is not part of EduPython;
 it is downloaded separately.

@@ -17,7 +17,7 @@
     <DisplayName>EduPython</DisplayName>
     <PublisherDisplayName>{publisher_display_name}</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
-    <Description>A simple Python editor for school, with Python and pygame-ce built in.</Description>
+    <Description>A simple Python editor for school, with Python, pygame-ce, numpy and matplotlib built in.</Description>
     <!-- Write to the real %LOCALAPPDATA%\EduPython (built-in Python, user ini,
          booklet), exactly like the portable exe, instead of a hidden
          per-package copy that pupils and IT cannot find. -->

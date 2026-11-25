@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download a standalone CPython, install pygame-ce into it and zip it.
+"""Download a standalone CPython, install the packages pupils need and zip it.
 
 The zip is embedded into EduPython when building with
 `--features bundled-python` and `EDUPYTHON_PYTHON_ZIP=<path to zip>`.
@@ -25,7 +25,7 @@ import urllib.request
 import zipfile
 
 RELEASES = "https://api.github.com/repos/astral-sh/python-build-standalone/releases?per_page=5"
-EXTRA_PACKAGES = ["pygame-ce"]  # imported as `pygame`
+EXTRA_PACKAGES = ["pygame-ce", "numpy", "matplotlib"]  # pygame-ce is imported as `pygame`
 # Not needed by pupils; removing them makes the download smaller.
 REMOVE = ["test", "idlelib", "lib2to3", "ensurepip", "turtledemo", "pydoc_data"]
 
@@ -71,6 +71,10 @@ def main():
 
     windows = "windows" in triple
     exe = os.path.join(root, "python.exe") if windows else os.path.join(root, "bin", "python3")
+    # Never take packages from the computer that builds this.
+    os.environ["PYTHONNOUSERSITE"] = "1"
+    for var in ("PYTHONPATH", "PYTHONHOME"):
+        os.environ.pop(var, None)
     print("Installing", ", ".join(EXTRA_PACKAGES))
     subprocess.check_call([exe, "-m", "pip", "install", "--no-cache-dir", "--upgrade", *EXTRA_PACKAGES])
     subprocess.check_call([exe, "-c", "import pygame, sys; assert pygame.IS_CE; print('pygame-ce', pygame.version.ver, 'on', sys.version)"])
@@ -86,6 +90,10 @@ def main():
             if d in ("__pycache__", "tests") and "site-packages" in dirpath:
                 shutil.rmtree(os.path.join(dirpath, d), ignore_errors=True)
                 dirnames.remove(d)
+
+    # Nothing that is needed may have been removed above.
+    check = "import numpy, matplotlib.pyplot, tkinter; print('numpy', numpy.__version__, 'matplotlib', matplotlib.__version__)"
+    subprocess.check_call([exe, "-B", "-c", check], env={**os.environ, "MPLBACKEND": "Agg"})
 
     # Zip with permissions kept; symlinks are stored as plain copies.
     if os.path.exists(out_zip):

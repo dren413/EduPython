@@ -1,6 +1,6 @@
 name: Build EduPython
 
-# Builds ready-to-run downloads with Python + pygame-ce built in:
+# Builds ready-to-run downloads with Python + pygame-ce, numpy and matplotlib built in:
 #   EduPython-windows-x64.exe   (portable, no installer)
 #   EduPython-macos-arm64.dmg   (Apple Silicon)
 #   EduPython-macos-x64.dmg     (Intel Macs)
@@ -61,7 +61,7 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Prepare built-in Python with pygame-ce
+      - name: Prepare built-in Python with its packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: python packaging/prepare_python.py ${{ matrix.target }} "$PWD/python-runtime.zip"

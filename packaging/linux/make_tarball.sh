@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Package the Linux build as EduPython-linux-x64.tar.gz:
-#   EduPython/EduPython          the program (Python + pygame-ce built in)
+#   EduPython/EduPython          the program (Python + packages built in)
 #   EduPython/install.sh         optional: adds EduPython to the app menu
 #   EduPython/edupython.png      icon
 #   EduPython/README.txt
@@ -22,7 +22,7 @@ EduPython for Linux (64-bit)
 Start:    double-click EduPython, or run  ./EduPython  in a terminal.
 Menu:     run  ./install.sh  once to add EduPython to the app menu.
 
-Python 3.12 and pygame-ce are built in. On first start they are unpacked
+Python 3.12, pygame-ce, numpy and matplotlib are built in. On first start they are unpacked
 once into ~/.local/share/EduPython (a few seconds).
 School settings: put edupython.ini next to the EduPython program, or in
 /etc/edupython/. See https://edupython.lu

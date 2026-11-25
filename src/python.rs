@@ -26,11 +26,18 @@ pub struct PythonExec {
     pub pre_args: Vec<String>,
     /// Extra package folders (school config), put in front of `PYTHONPATH`.
     pub extra_path: Vec<PathBuf>,
+    /// The built-in Python: ignore packages and settings of other Pythons on
+    /// this computer (`pip install --user`, `PYTHONPATH`, `PYTHONHOME`).
+    pub isolated: bool,
 }
 
 impl PythonExec {
     fn new(command: impl Into<String>) -> Self {
-        Self { command: command.into(), pre_args: Vec::new(), extra_path: Vec::new() }
+        Self { command: command.into(), pre_args: Vec::new(), extra_path: Vec::new(), isolated: false }
+    }
+
+    fn bundled(path: &std::path::Path) -> Self {
+        Self { isolated: true, ..Self::new(path.to_string_lossy()) }
     }
 
     fn with_extra_path(mut self, extra: &[PathBuf]) -> Self {
@@ -50,9 +57,12 @@ impl PythonExec {
         let mut cmd = Command::new(&self.command);
         cmd.args(&self.pre_args);
         cmd.env("PYGAME_HIDE_SUPPORT_PROMPT", "1");
+        if self.isolated {
+            cmd.env("PYTHONNOUSERSITE", "1").env_remove("PYTHONPATH").env_remove("PYTHONHOME");
+        }
         if !self.extra_path.is_empty() {
             let mut paths = self.extra_path.clone();
-            if let Some(old) = std::env::var_os("PYTHONPATH") {
+            if let Some(old) = std::env::var_os("PYTHONPATH").filter(|_| !self.isolated) {
                 paths.extend(std::env::split_paths(&old));
             }
             if let Ok(joined) = std::env::join_paths(paths) {
@@ -172,7 +182,7 @@ fn parse_installed(text: &str) -> Vec<(String, String)> {
 
 fn bundled_candidates() -> Vec<PythonExec> {
     let embedded: Vec<PythonExec> =
-        crate::runtime::embedded_python().map(|p| PythonExec::new(p.to_string_lossy())).into_iter().collect();
+        crate::runtime::embedded_python().map(|p| PythonExec::bundled(&p)).into_iter().collect();
     if !embedded.is_empty() {
         return embedded;
     }
@@ -192,14 +202,14 @@ fn bundled_candidates() -> Vec<PythonExec> {
             }
         })
         .filter(|p| p.exists())
-        .map(|p| PythonExec::new(p.to_string_lossy()))
+        .map(|p| PythonExec::bundled(&p))
         .collect()
 }
 
 fn system_candidates() -> Vec<PythonExec> {
     if cfg!(windows) {
         let mut v = vec![
-            PythonExec { command: "py".into(), pre_args: vec!["-3".into()], extra_path: Vec::new() },
+            PythonExec { command: "py".into(), pre_args: vec!["-3".into()], extra_path: Vec::new(), isolated: false },
             PythonExec::new("python"),
             PythonExec::new("python3"),
         ];
@@ -430,6 +440,23 @@ impl Drop for Runner {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn built_in_python_is_isolated() {
+        let env = |e: &PythonExec| -> std::collections::HashMap<String, Option<String>> {
+            e.command()
+                .get_envs()
+                .map(|(k, v)| (k.to_string_lossy().into_owned(), v.map(|v| v.to_string_lossy().into_owned())))
+                .collect()
+        };
+        let b = env(&PythonExec::bundled(std::path::Path::new("python3")));
+        assert_eq!(b["PYTHONNOUSERSITE"].as_deref(), Some("1"));
+        assert_eq!((&b["PYTHONPATH"], &b["PYTHONHOME"]), (&None, &None), "removed");
+        assert!(!env(&PythonExec::new("python3")).contains_key("PYTHONNOUSERSITE"));
+        // The school's package folders still work.
+        let b = env(&PythonExec::bundled(std::path::Path::new("python3")).with_extra_path(&["libs".into()]));
+        assert_eq!(b["PYTHONPATH"].as_deref(), Some("libs"));
+    }
 
     #[test]
     fn run_with_input_and_error() {
